@@ -1,0 +1,3 @@
+package database
+
+// setup GORM here ...
