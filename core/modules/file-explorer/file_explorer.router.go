@@ -11,4 +11,6 @@ func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/explorer/upload", UploadFile)
 	mux.HandleFunc("/api/explorer/download", DownloadFile)
 	mux.HandleFunc("/api/explorer/delete", DeleteItem)
+	mux.HandleFunc("/api/explorer/presigned-url", GeneratePresignedURLAdmin)
+	mux.HandleFunc("/upload/presigned", PresignedUploadHandler)
 }

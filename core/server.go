@@ -16,6 +16,7 @@ import (
 	"lumbung-fs/core/middleware"
 	"lumbung-fs/core/modules"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
+	fileExplorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
 	ruleModel "lumbung-fs/core/modules/rule/model"
 	"lumbung-fs/core/variables"
@@ -41,11 +42,15 @@ func ServerStart() {
 		&originModel.Origin{},
 		&originModel.UnknownOrigin{},
 		&ruleModel.Rule{},
+		&fileExplorerModel.PresignedURL{},
 	)
 	if err != nil {
 		log.Fatalf("Database auto-migration failed: %v", err)
 	}
 	log.Println("Database migration completed successfully.")
+
+	// Start presigned URL cleanup worker
+	go fileExplorer.StartPresignedURLCleanupWorker(db)
 
 	// 3. Initialize credentials file
 	initCredentialsFile()
@@ -64,6 +69,9 @@ func ServerStart() {
 
 	// REST API upload endpoint
 	mux.HandleFunc("/upload", restUploadHandler)
+
+	// REST API presigned URL endpoint
+	mux.HandleFunc("/presigned-url", fileExplorer.GeneratePresignedURLRest)
 
 	// 8. Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

@@ -4,14 +4,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"lumbung-fs/core/database"
+	"lumbung-fs/core/middleware"
+	explorerModel "lumbung-fs/core/modules/file-explorer/model"
+	originModel "lumbung-fs/core/modules/origin/model"
 	"lumbung-fs/core/variables"
+
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // FileItem represents a file or folder in the explorer
@@ -319,4 +326,267 @@ func DeleteItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Item deleted successfully"})
+}
+
+// StartPresignedURLCleanupWorker periodically deletes presigned URLs older than 1 minute
+func StartPresignedURLCleanupWorker(db *gorm.DB) {
+	ticker := time.NewTicker(10 * time.Second)
+	for range ticker.C {
+		cutoff := time.Now().Add(-1 * time.Minute)
+		if err := db.Where("created_at < ?", cutoff).Delete(&explorerModel.PresignedURL{}).Error; err != nil {
+			log.Printf("Error cleaning up expired presigned URLs: %v", err)
+		}
+	}
+}
+
+// GeneratePresignedURLAdmin handles POST /api/explorer/presigned-url (for admin dashboard UI)
+func GeneratePresignedURLAdmin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var input struct {
+		OriginID string `json:"origin_id"`
+		Path     string `json:"path"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	if input.OriginID == "" {
+		respondWithError(w, http.StatusBadRequest, "Origin ID is required")
+		return
+	}
+
+	var origin originModel.Origin
+	if err := database.DB.Where("id = ?", input.OriginID).First(&origin).Error; err != nil {
+		respondWithError(w, http.StatusNotFound, "Origin not found")
+		return
+	}
+
+	tokenUUID, err := uuid.NewV7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to generate token")
+		return
+	}
+	token := tokenUUID.String()
+
+	presigned := explorerModel.PresignedURL{
+		OriginID: origin.ID,
+		Path:     input.Path,
+		Token:    token,
+	}
+
+	if err := database.DB.Create(&presigned).Error; err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"url":        fmt.Sprintf("/upload/presigned?token=%s", token),
+		"token":      token,
+		"expires_at": presigned.CreatedAt.Add(1 * time.Minute),
+	})
+}
+
+// GeneratePresignedURLRest handles POST /presigned-url (for external backend clients via API Key)
+func GeneratePresignedURLRest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	originHeader := r.Header.Get("Origin")
+	hostHeader := r.Host
+	if hostHeader == "" {
+		hostHeader = r.Header.Get("Host")
+	}
+
+	requestDomain := ""
+	if originHeader != "" {
+		requestDomain = middleware.ParseDomain(originHeader)
+	} else {
+		requestDomain = middleware.ParseDomain(hostHeader)
+	}
+
+	var origin originModel.Origin
+	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
+		respondWithError(w, http.StatusForbidden, "Forbidden: Invalid origin")
+		return
+	}
+
+	apiKey := r.Header.Get("X-API-Key")
+	if apiKey == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				apiKey = parts[1]
+			}
+		}
+	}
+
+	if apiKey != origin.ApiKey || origin.ApiKey == "" {
+		respondWithError(w, http.StatusUnauthorized, "Unauthorized: Invalid or missing API key")
+		return
+	}
+
+	var input struct {
+		Path string `json:"path"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		// path defaults to empty if payload is empty/missing
+	}
+
+	tokenUUID, err := uuid.NewV7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to generate token")
+		return
+	}
+	token := tokenUUID.String()
+
+	presigned := explorerModel.PresignedURL{
+		OriginID: origin.ID,
+		Path:     input.Path,
+		Token:    token,
+	}
+
+	if err := database.DB.Create(&presigned).Error; err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]interface{}{
+		"presigned_url": fmt.Sprintf("https://%s/upload/presigned?token=%s", origin.Domain, token),
+		"token":         token,
+		"expires_at":    presigned.CreatedAt.Add(1 * time.Minute),
+	})
+}
+
+// PresignedUploadHandler handles file uploads via public presigned URLs
+func PresignedUploadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		respondWithError(w, http.StatusBadRequest, "Token parameter is required")
+		return
+	}
+
+	var presigned explorerModel.PresignedURL
+	if err := database.DB.Where("token = ?", token).First(&presigned).Error; err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Invalid or expired presigned token")
+		return
+	}
+
+	if time.Since(presigned.CreatedAt) > 1 * time.Minute {
+		database.DB.Delete(&presigned)
+		respondWithError(w, http.StatusGone, "Presigned token has expired")
+		return
+	}
+
+	var origin originModel.Origin
+	if err := database.DB.Where("id = ?", presigned.OriginID).First(&origin).Error; err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Origin not found for token")
+		return
+	}
+
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to parse multipart form")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "File parameter is required")
+		return
+	}
+	defer file.Close()
+
+	ext := filepath.Ext(header.Filename)
+
+	subpath := strings.Trim(presigned.Path, "/")
+	originSnake := strings.ReplaceAll(strings.ReplaceAll(origin.Domain, ".", "_"), "-", "_")
+
+	evalPath := subpath
+	prefix := originSnake + "/"
+	if strings.HasPrefix(subpath, prefix) {
+		evalPath = subpath[len(prefix):]
+	} else if subpath == originSnake {
+		evalPath = ""
+	}
+
+	allowed, fallbackURL, status, err := middleware.EvaluatePathRules(r, origin.ID, evalPath, header.Size, ext)
+	if !allowed {
+		if fallbackURL != "" {
+			http.Redirect(w, r, fallbackURL, http.StatusFound)
+			return
+		}
+		errMsg := "Upload blocked by path rules"
+		if err != nil {
+			errMsg = fmt.Sprintf("Upload blocked: %v", err)
+		}
+		respondWithError(w, status, errMsg)
+		return
+	}
+
+	targetDir, err := SecurePath(filepath.Join(originSnake, evalPath))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "ID generation failed")
+		return
+	}
+
+	uniqueName := id.String() + ext
+	targetFilePath := filepath.Join(targetDir, uniqueName)
+
+	out, err := os.Create(targetFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Write failed")
+		return
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Copy failed")
+		return
+	}
+
+	database.DB.Delete(&presigned)
+
+	bucketAbs, _ := filepath.Abs(variables.BucketDir)
+	relPath, _ := filepath.Rel(bucketAbs, targetFilePath)
+
+	var fileURL string
+	evalPathClean := strings.Trim(evalPath, "/")
+	if evalPathClean != "" {
+		fileURL = fmt.Sprintf("https://%s/file/%s/%s", origin.Domain, evalPathClean, uniqueName)
+	} else {
+		fileURL = fmt.Sprintf("https://%s/file/%s", origin.Domain, uniqueName)
+	}
+
+	respondWithJSON(w, http.StatusCreated, map[string]interface{}{
+		"message":  "File uploaded successfully",
+		"url":      fileURL,
+		"filename": uniqueName,
+		"path":     relPath,
+		"size":     header.Size,
+	})
 }

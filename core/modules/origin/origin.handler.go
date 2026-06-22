@@ -68,9 +68,17 @@ func CreateOrigin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	keyUUID, err := uuid.NewV7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to generate API key")
+		return
+	}
+	apiKey := "lf_" + strings.ReplaceAll(keyUUID.String(), "-", "")
+
 	origin := originModel.Origin{
 		Domain:    domainClean,
 		IsBlocked: input.IsBlocked,
+		ApiKey:    apiKey,
 	}
 
 	if err := database.DB.Create(&origin).Error; err != nil {
@@ -278,10 +286,18 @@ func PromoteUnknownOrigin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	keyUUID, err := uuid.NewV7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to generate API key")
+		return
+	}
+	apiKey := "lf_" + strings.ReplaceAll(keyUUID.String(), "-", "")
+
 	// 2. Insert into origins table
 	origin := originModel.Origin{
 		Domain:    unknown.Domain,
 		IsBlocked: false,
+		ApiKey:    apiKey,
 	}
 
 	// Begin transaction to ensure consistency

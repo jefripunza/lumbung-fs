@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/lib/api'
+import axios from 'axios'
 
 export interface FileItem {
   name: string
@@ -50,6 +51,28 @@ export const useExplorerStore = defineStore('explorer', () => {
     return data
   }
 
+  async function generatePresignedUrl(originId: string, path: string) {
+    const { data } = await api.post('/explorer/presigned-url', { origin_id: originId, path })
+    return data
+  }
+
+  async function uploadFileViaPresigned(uploadUrl: string, file: File, path: string) {
+    const formData = new FormData()
+    formData.append('file', file)
+    uploadProgress.value = 0
+    const { data } = await axios.post(uploadUrl, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => {
+        if (e.total) {
+          uploadProgress.value = Math.round((e.loaded * 100) / e.total)
+        }
+      },
+    })
+    uploadProgress.value = 100
+    await listItems(path)
+    return data
+  }
+
   function downloadFile(path: string) {
     const token = localStorage.getItem('lumbungfs_token')
     const url = `/api/explorer/download?path=${encodeURIComponent(path)}`
@@ -71,5 +94,5 @@ export const useExplorerStore = defineStore('explorer', () => {
     await listItems(currentPath.value)
   }
 
-  return { items, currentPath, isLoading, uploadProgress, listItems, createFolder, uploadFile, downloadFile, deleteItem }
+  return { items, currentPath, isLoading, uploadProgress, listItems, createFolder, uploadFile, downloadFile, deleteItem, generatePresignedUrl, uploadFileViaPresigned }
 })

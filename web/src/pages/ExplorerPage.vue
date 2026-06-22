@@ -2,7 +2,6 @@
 import { onMounted, ref, computed } from 'vue'
 import { useExplorerStore, type FileItem } from '@/stores/explorer'
 import { useOriginsStore } from '@/stores/origins'
-import SageCard from '@/components/SageCard.vue'
 import MossButton from '@/components/MossButton.vue'
 import OutlineButton from '@/components/OutlineButton.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
@@ -74,7 +73,6 @@ function navigateUp() {
 const showImagePreviewModal = ref(false)
 const previewImageUrl = ref('')
 const isPreviewLoading = ref(false)
-const zoomScale = ref(1)
 const previewImageName = ref('')
 
 function isImage(name: string): boolean {
@@ -92,7 +90,6 @@ function openItem(item: FileItem) {
 
 async function openImagePreview(item: FileItem) {
   isPreviewLoading.value = true
-  zoomScale.value = 1
   previewImageUrl.value = ''
   previewImageName.value = item.name
   showImagePreviewModal.value = true
@@ -119,18 +116,6 @@ function closeImagePreview() {
   }
 }
 
-function zoomIn() {
-  zoomScale.value = Math.min(3, zoomScale.value + 0.2)
-}
-
-function zoomOut() {
-  zoomScale.value = Math.max(0.2, zoomScale.value - 0.2)
-}
-
-function resetZoom() {
-  zoomScale.value = 1
-}
-
 async function handleCreateFolder() {
   if (!newFolderName.value.trim()) return
   await store.createFolder(store.currentPath, newFolderName.value.trim())
@@ -146,8 +131,51 @@ async function handleUpload(e: Event) {
   const target = e.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
-  await store.uploadFile(store.currentPath, file)
-  target.value = ''
+  try {
+    // 1. Generate presigned URL
+    const presignedData = await store.generatePresignedUrl(selectedOriginId.value, store.currentPath)
+    // 2. Upload file via presigned URL
+    await store.uploadFileViaPresigned(presignedData.url, file, store.currentPath)
+  } catch (err) {
+    console.error('Presigned upload failed:', err)
+  } finally {
+    target.value = ''
+  }
+}
+
+const sortedItems = computed(() => {
+  const folders = store.items.filter(item => item.is_dir).sort((a, b) => a.name.localeCompare(b.name))
+  const files = store.items.filter(item => !item.is_dir).sort((a, b) => a.name.localeCompare(b.name))
+  return [...folders, ...files]
+})
+
+function getPublicUrl(itemPath: string): string {
+  const origin = selectedOrigin.value
+  if (!origin) return ''
+  const prefix = baseOriginPath.value + '/'
+  let rel = itemPath
+  if (itemPath.startsWith(prefix)) {
+    rel = itemPath.substring(prefix.length)
+  }
+  return `https://${origin.domain}/file/${rel}`
+}
+
+const copiedFileId = ref<string | null>(null)
+
+async function handleCopyUrl(item: FileItem) {
+  const url = getPublicUrl(item.path)
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    copiedFileId.value = item.path
+    setTimeout(() => {
+      if (copiedFileId.value === item.path) {
+        copiedFileId.value = null
+      }
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy file URL', err)
+  }
 }
 
 function handleDownload(item: FileItem) {
@@ -268,40 +296,83 @@ const fileIcon = (item: FileItem) => {
         <p>{{ store.currentPath !== baseOriginPath ? 'This folder is empty.' : 'No files in storage yet.' }}</p>
       </div>
 
-      <!-- File Grid -->
-      <div v-else class="explorer-page__grid">
-        <!-- Back button -->
-        <SageCard
-          v-if="store.currentPath && store.currentPath !== baseOriginPath"
-          class="file-card file-card--back"
-          @click="navigateUp()"
-        >
-          <span class="file-card__icon">⬆️</span>
-          <span class="file-card__name">..</span>
-        </SageCard>
+      <!-- Detail List Table -->
+      <div v-else class="explorer-table-container animate-fade-in">
+        <table class="explorer-table">
+          <thead>
+            <tr>
+              <th class="explorer-table__th">NAME</th>
+              <th class="explorer-table__th">SIZE</th>
+              <th class="explorer-table__th">CREATED DATE</th>
+              <th class="explorer-table__th text-right">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Back row -->
+            <tr
+              v-if="store.currentPath && store.currentPath !== baseOriginPath"
+              class="explorer-table__tr explorer-table__tr--back"
+              @click="navigateUp()"
+            >
+              <td colspan="4" class="explorer-table__td">
+                <span class="explorer-table__icon">⬆️</span>
+                <span class="explorer-table__back-text">.. (Parent Directory)</span>
+              </td>
+            </tr>
 
-        <!-- Items -->
-        <SageCard
-          v-for="item in store.items"
-          :key="item.path"
-          class="file-card"
-          :class="{ 'file-card--dir': item.is_dir }"
-        >
-          <div class="file-card__main" @click="openItem(item)">
-            <span class="file-card__icon">{{ fileIcon(item) }}</span>
-            <div class="file-card__info">
-              <span class="file-card__name">{{ item.name }}</span>
-              <span class="file-card__meta">
-                {{ item.is_dir ? 'Folder' : formatSize(item.size) }}
-                <template v-if="item.modified_at"> · {{ formatDate(item.modified_at) }}</template>
-              </span>
-            </div>
-          </div>
-          <div class="file-card__actions">
-            <button v-if="!item.is_dir" class="file-card__action" title="Download" @click.stop="handleDownload(item)">↓</button>
-            <button class="file-card__action file-card__action--danger" title="Delete" @click.stop="openDeleteConfirm(item)">✕</button>
-          </div>
-        </SageCard>
+            <!-- Sorted Items -->
+            <tr
+              v-for="item in sortedItems"
+              :key="item.path"
+              class="explorer-table__tr"
+              :class="{ 'explorer-table__tr--dir': item.is_dir }"
+              @click="openItem(item)"
+            >
+              <td class="explorer-table__td">
+                <div class="explorer-table__name-cell">
+                  <span class="explorer-table__icon">{{ fileIcon(item) }}</span>
+                  <span class="explorer-table__name">{{ item.name }}</span>
+                </div>
+              </td>
+              <td class="explorer-table__td explorer-table__size">
+                {{ item.is_dir ? '—' : formatSize(item.size) }}
+              </td>
+              <td class="explorer-table__td explorer-table__date">
+                {{ formatDate(item.modified_at) }}
+              </td>
+              <td class="explorer-table__td text-right" @click.stop>
+                <div class="explorer-table__actions">
+                  <button
+                    v-if="!item.is_dir"
+                    type="button"
+                    class="explorer-table__action"
+                    title="Copy URL"
+                    @click="handleCopyUrl(item)"
+                  >
+                    {{ copiedFileId === item.path ? 'Copied!' : 'Copy URL' }}
+                  </button>
+                  <button
+                    v-if="!item.is_dir"
+                    type="button"
+                    class="explorer-table__action"
+                    title="Download"
+                    @click="handleDownload(item)"
+                  >
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    class="explorer-table__action explorer-table__action--danger"
+                    title="Delete"
+                    @click="openDeleteConfirm(item)"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </template>
 
@@ -352,16 +423,9 @@ const fileIcon = (item: FileItem) => {
         <div class="image-preview-container">
           <img
             :src="previewImageUrl"
-            :style="{ transform: `scale(${zoomScale})` }"
             class="preview-img"
             alt="Preview"
           />
-        </div>
-        <div class="image-preview-controls">
-          <button type="button" class="control-btn" @click="zoomOut" title="Zoom Out">Zoom Out (-)</button>
-          <span class="control-zoom-pct">{{ Math.round(zoomScale * 100) }}%</span>
-          <button type="button" class="control-btn" @click="zoomIn" title="Zoom In">Zoom In (+)</button>
-          <button type="button" class="control-btn control-btn--secondary" @click="resetZoom">Reset</button>
         </div>
       </div>
       <template #footer>
@@ -724,7 +788,7 @@ const fileIcon = (item: FileItem) => {
   align-items: center;
   justify-content: center;
   overflow: auto;
-  max-height: 55vh;
+  max-height: 70vh;
   min-height: 320px;
   background: var(--color-sage-paper);
   border-radius: var(--radius-xl);
@@ -735,44 +799,108 @@ const fileIcon = (item: FileItem) => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  transition: transform 0.15s ease-out;
 }
-.image-preview-controls {
+
+/* ───── Explorer Table ───── */
+.explorer-table-container {
+  background: var(--color-bone-white);
+  border: 0.5px solid var(--color-lichen);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-subtle);
+  overflow-x: auto;
+}
+.explorer-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.explorer-table__th {
+  font-family: var(--font-cinetype);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--color-slate-smoke);
+  padding: 16px 20px;
+  border-bottom: 0.5px solid var(--color-lichen);
+  font-weight: 600;
+}
+.explorer-table__tr {
+  transition: background 0.12s ease;
+  cursor: default;
+}
+.explorer-table__tr--dir {
+  cursor: pointer;
+}
+.explorer-table__tr--back {
+  cursor: pointer;
+}
+.explorer-table__tr:hover {
+  background: rgba(133, 192, 147, 0.05);
+}
+.explorer-table__td {
+  padding: 14px 20px;
+  font-family: var(--font-muoto);
+  font-size: 13.5px;
+  color: var(--color-forest-ink);
+  border-bottom: 0.5px solid rgba(202, 211, 210, 0.4);
+}
+.explorer-table__tr:last-child .explorer-table__td {
+  border-bottom: none;
+}
+.explorer-table__name-cell {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--spacing-12);
+  gap: 12px;
 }
-.control-btn {
+.explorer-table__icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.explorer-table__name {
+  font-family: var(--font-denim);
+  font-weight: 500;
+  color: var(--color-forest-ink);
+  word-break: break-all;
+}
+.explorer-table__back-text {
+  font-family: var(--font-denim);
+  font-weight: 500;
+  color: var(--color-slate-smoke);
+}
+.explorer-table__size,
+.explorer-table__date {
+  color: var(--color-slate-smoke);
+  font-size: 13px;
+}
+.explorer-table__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
+  flex-wrap: wrap;
+}
+.explorer-table__action {
   background: var(--color-bone-white);
   border: 0.5px solid var(--color-lichen);
   border-radius: var(--radius-md);
-  padding: 6px 12px;
+  padding: 4px 8px;
   font-family: var(--font-denim);
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--color-forest-ink);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
 }
-.control-btn:hover {
+.explorer-table__action:hover {
   background: var(--color-lichen);
-  color: var(--color-bone-white);
 }
-.control-btn--secondary {
-  border-color: transparent;
-  background: none;
+.explorer-table__action--danger {
+  border-color: rgba(196, 77, 77, 0.3);
+  color: #8b2020;
 }
-.control-btn--secondary:hover {
-  background: rgba(133, 192, 147, 0.1);
-  color: var(--color-forest-ink);
+.explorer-table__action--danger:hover {
+  background: rgba(196, 77, 77, 0.08);
+  border-color: #c44d4d;
 }
-.control-zoom-pct {
-  font-family: var(--font-muoto);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-forest-ink);
-  min-width: 48px;
-  text-align: center;
+.text-right {
+  text-align: right;
 }
 </style>

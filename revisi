@@ -1,9 +1,10 @@
-revisi part 3 :
-- ketika create origin, langsung create apikey;
-- gunakan metode presigned url, jadi akan ada endpoint untuk generate presigned url, lalu FE langsung bisa upload ke service ini, url di save di table baru, dan buatkan worker untuk check apakah url itu sudah 1 menit atau belum, jika sudah 1 menit maka url tersebut akan di hapus;
-- foldering masih salah, harusnya saat di menu "Storage Explorer" di New Folder, ketika create harusnya masuk ke ./bucket/sawang_tech/nama-folder-baru/bisa-recursive/UUIDv7.jpeg dan cara akses nya gini: https://sawang.tech/file/nama-folder-baru/bisa-recursive/UUIDv7.jpeg;
-- di menu "Storage Explorer", ketika di list file nya adalah sebuah image maka bisa di klik akan muncul popup modal tapi mending tombol zoom nya / feature zoom nya di hapus saja;
-- di menu "Storage Explorer", view nya di buat detail list, jadi seperti table, ada nama file, size, created date, dan actions (copy url, download, delete). dan list paling atas adalah folder dan list di bawah adalah file namun keduanya sudah urut;
+revisi part 4 :
+- di menu "Storage Explorer"
+  - tambahkan button "Generate Presigned URL" yang mana nanti dari backend membuatkan url dengan batas waktu 1 menit, setelah di klik langsung masuk clipboard, dan di paste ke browser langsung akses uploader yang disediakan ([GET]/upload?token=TOKEN), kalau method POST maka langsung multipart upload (origin mengikuti sekarang);
+  - button upload, pakai /api/explorer/upload, jangan pakai presigned url;
+  - setiap buat folder memang muncul di list tapi ketika di refresh hilang folder tersebut;
+- please ini critical, foldering masih salah, harusnya saat di menu "Storage Explorer" di New Folder, ketika create harusnya masuk ke ./bucket/sawang_tech/nama-folder-baru/bisa-recursive/UUIDv7.jpeg dan cara akses nya gini: https://sawang.tech/file/nama-folder-baru/bisa-recursive/UUIDv7.jpeg;
+-
 
 revisi di PLAN.md dan revisi kode;
 
