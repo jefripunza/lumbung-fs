@@ -12,6 +12,34 @@ export default defineConfig({
     tailwindcss(),
     vueDevTools(),
   ],
+    server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/upload': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+    },
+    watch: {
+      ignored: [
+        '**/*.go',
+        '**/go.mod',
+        '**/go.sum',
+        '**/vendor/**',
+        '**/bin/**',
+        '**/tmp/**',
+        '**/*.spec.ts',
+        '**/tests/**',
+        'erd.*',
+      ],
+    },
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
