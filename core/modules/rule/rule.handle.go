@@ -58,6 +58,7 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		OriginID            string `json:"origin_id"`
 		Path                string `json:"path"`
 		ValidateMethod      string `json:"validate_method"`
+		ValidateHeaders     string `json:"validate_headers"`
 		ValidateURL         string `json:"validate_url"`
 		ValidateFallbackURL string `json:"validate_fallback_url"`
 		IsMaxSize           bool   `json:"is_max_size"`
@@ -78,6 +79,8 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pathClean := strings.TrimSpace(strings.Trim(input.Path, "/"))
+	pathClean = strings.TrimPrefix(pathClean, "file/")
+	pathClean = strings.Trim(pathClean, "/")
 	if pathClean == "" {
 		respondWithError(w, http.StatusBadRequest, "Path is required")
 		return
@@ -92,6 +95,7 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		OriginID:            input.OriginID,
 		Path:                pathClean,
 		ValidateMethod:      strings.TrimSpace(input.ValidateMethod),
+		ValidateHeaders:     strings.TrimSpace(input.ValidateHeaders),
 		ValidateURL:         strings.TrimSpace(input.ValidateURL),
 		ValidateFallbackURL: strings.TrimSpace(input.ValidateFallbackURL),
 		IsMaxSize:           input.IsMaxSize,
@@ -125,6 +129,7 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Path                string `json:"path"`
 		ValidateMethod      string `json:"validate_method"`
+		ValidateHeaders     string `json:"validate_headers"`
 		ValidateURL         string `json:"validate_url"`
 		ValidateFallbackURL string `json:"validate_fallback_url"`
 		IsMaxSize           bool   `json:"is_max_size"`
@@ -147,9 +152,13 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 
 	// Update fields
 	if input.Path != "" {
-		rule.Path = strings.TrimSpace(strings.Trim(input.Path, "/"))
+		pathClean := strings.TrimSpace(strings.Trim(input.Path, "/"))
+		pathClean = strings.TrimPrefix(pathClean, "file/")
+		pathClean = strings.Trim(pathClean, "/")
+		rule.Path = pathClean
 	}
 	rule.ValidateMethod = strings.TrimSpace(input.ValidateMethod)
+	rule.ValidateHeaders = strings.TrimSpace(input.ValidateHeaders)
 	rule.ValidateURL = strings.TrimSpace(input.ValidateURL)
 	rule.ValidateFallbackURL = strings.TrimSpace(input.ValidateFallbackURL)
 	rule.IsMaxSize = input.IsMaxSize

@@ -314,7 +314,8 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		relPath, _ := filepath.Rel(variables.BucketDir, targetFilePath)
+		bucketAbs, _ := filepath.Abs(variables.BucketDir)
+		relPath, _ := filepath.Rel(bucketAbs, targetFilePath)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]interface{}{

@@ -57,6 +57,10 @@ func CreateOrigin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	domainClean := strings.TrimSpace(strings.ToLower(input.Domain))
+	domainClean = strings.TrimPrefix(domainClean, "https://")
+	domainClean = strings.TrimPrefix(domainClean, "http://")
+	domainClean = strings.Split(domainClean, "/")[0]
+	
 	if domainClean == "" {
 		respondWithError(w, http.StatusBadRequest, "Domain is required")
 		return
@@ -110,7 +114,11 @@ func UpdateOrigin(w http.ResponseWriter, r *http.Request) {
 
 	// Update fields
 	if input.Domain != "" {
-		origin.Domain = strings.TrimSpace(strings.ToLower(input.Domain))
+		domainClean := strings.TrimSpace(strings.ToLower(input.Domain))
+		domainClean = strings.TrimPrefix(domainClean, "https://")
+		domainClean = strings.TrimPrefix(domainClean, "http://")
+		domainClean = strings.Split(domainClean, "/")[0]
+		origin.Domain = domainClean
 	}
 	origin.IsBlocked = input.IsBlocked
 

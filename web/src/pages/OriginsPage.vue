@@ -17,13 +17,27 @@ const newDomain = ref('')
 const editDomain = ref('')
 const editBlocked = ref(false)
 
+const showDeleteConfirm = ref(false)
+const deleteTarget = ref<Origin | null>(null)
+
 onMounted(() => {
   store.fetchOrigins()
 })
 
+function cleanDomain(val: string): string {
+  let domain = val.trim().toLowerCase()
+  if (domain.startsWith('https://')) {
+    domain = domain.substring(8)
+  } else if (domain.startsWith('http://')) {
+    domain = domain.substring(7)
+  }
+  return domain.split('/')[0] || ''
+}
+
 async function handleCreate() {
-  if (!newDomain.value.trim()) return
-  await store.createOrigin(newDomain.value.trim())
+  const cleaned = cleanDomain(newDomain.value)
+  if (!cleaned) return
+  await store.createOrigin(cleaned)
   newDomain.value = ''
   showCreateModal.value = false
 }
@@ -36,16 +50,24 @@ function openEdit(origin: Origin) {
 }
 
 async function handleEdit() {
-  if (!editTarget.value || !editDomain.value.trim()) return
-  await store.updateOrigin(editTarget.value.id, editDomain.value.trim(), editBlocked.value)
+  if (!editTarget.value) return
+  const cleaned = cleanDomain(editDomain.value)
+  if (!cleaned) return
+  await store.updateOrigin(editTarget.value.id, cleaned, editBlocked.value)
   showEditModal.value = false
   editTarget.value = null
 }
 
-async function handleDelete(id: string) {
-  if (confirm('Delete this origin? This cannot be undone.')) {
-    await store.deleteOrigin(id)
-  }
+function openDeleteConfirm(origin: Origin) {
+  deleteTarget.value = origin
+  showDeleteConfirm.value = true
+}
+
+async function handleDelete() {
+  if (!deleteTarget.value) return
+  await store.deleteOrigin(deleteTarget.value.id)
+  showDeleteConfirm.value = false
+  deleteTarget.value = null
 }
 
 async function handleToggleBlock(origin: Origin) {
@@ -94,7 +116,7 @@ async function handleToggleBlock(origin: Origin) {
           <OutlineButton @click="handleToggleBlock(origin)">
             {{ origin.is_blocked ? 'Unblock' : 'Block' }}
           </OutlineButton>
-          <OutlineButton variant="danger" @click="handleDelete(origin.id)">Delete</OutlineButton>
+          <OutlineButton variant="danger" @click="openDeleteConfirm(origin)">Delete</OutlineButton>
         </div>
       </SageCard>
     </div>
@@ -133,14 +155,21 @@ async function handleToggleBlock(origin: Origin) {
             required
           />
         </div>
-        <label class="field__checkbox">
-          <input type="checkbox" v-model="editBlocked" />
-          <span>Block this origin</span>
-        </label>
       </form>
       <template #footer>
         <OutlineButton @click="showEditModal = false">Cancel</OutlineButton>
         <MossButton @click="handleEdit" :disabled="!editDomain.trim()">Save Changes</MossButton>
+      </template>
+    </ModalDialog>
+
+    <!-- Delete Confirmation Modal -->
+    <ModalDialog v-if="showDeleteConfirm" title="Delete Origin" max-width="420px" @close="showDeleteConfirm = false">
+      <div style="font-family: var(--font-denim); font-size: 14px; color: var(--color-forest-ink); line-height: 1.5;">
+        Are you sure you want to delete origin <strong>{{ deleteTarget?.domain }}</strong>? This action cannot be undone and will prevent clients from serving files under this domain.
+      </div>
+      <template #footer>
+        <OutlineButton @click="showDeleteConfirm = false">Cancel</OutlineButton>
+        <OutlineButton variant="danger" @click="handleDelete">Delete</OutlineButton>
       </template>
     </ModalDialog>
   </div>

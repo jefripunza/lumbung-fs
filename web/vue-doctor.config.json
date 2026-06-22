@@ -1,0 +1,9 @@
+{
+  "maxComponentLines": 700,
+  "rules": {
+    "vue-doctor/no-wide-letter-spacing": "off",
+    "vue-doctor/no-tiny-text": "off",
+    "vue-doctor/no-outline-none": "off",
+    "vue-doctor/require-button-name": "off"
+  }
+}

@@ -16,11 +16,15 @@ const showEditModal = ref(false)
 const editTarget = ref<Rule | null>(null)
 const filterOriginId = ref('')
 
-// New rule form
+const showDeleteConfirm = ref(false)
+const deleteTarget = ref<Rule | null>(null)
+
+// New rule form with headers keys list
 const form = ref({
   origin_id: '',
   path: '',
   validate_method: '',
+  validate_headers: '',
   validate_url: '',
   validate_fallback_url: '',
   is_max_size: false,
@@ -28,6 +32,7 @@ const form = ref({
   value_unit_size: 'MB',
   is_extensions: false,
   value_extensions: '',
+  headers: [{ id: Math.random().toString(36).substring(2), value: '' }]
 })
 
 function resetForm() {
@@ -35,6 +40,7 @@ function resetForm() {
     origin_id: '',
     path: '',
     validate_method: '',
+    validate_headers: '',
     validate_url: '',
     validate_fallback_url: '',
     is_max_size: false,
@@ -42,6 +48,7 @@ function resetForm() {
     value_unit_size: 'MB',
     is_extensions: false,
     value_extensions: '',
+    headers: [{ id: Math.random().toString(36).substring(2), value: '' }]
   }
 }
 
@@ -59,31 +66,99 @@ function getDomainName(originId: string) {
   return originsStore.origins.find((o) => o.id === originId)?.domain || originId
 }
 
+function addHeaderKey() {
+  form.value.headers.push({ id: Math.random().toString(36).substring(2), value: '' })
+}
+
+function removeHeaderKey(index: number) {
+  form.value.headers.splice(index, 1)
+  if (form.value.headers.length === 0) {
+    form.value.headers.push({ id: Math.random().toString(36).substring(2), value: '' })
+  }
+}
+
+function cleanFormPayload() {
+  let pathVal = form.value.path.trim()
+  if (pathVal.startsWith('/file/')) {
+    pathVal = pathVal.substring(6)
+  } else if (pathVal.startsWith('file/')) {
+    pathVal = pathVal.substring(5)
+  } else if (pathVal.startsWith('/file')) {
+    pathVal = pathVal.substring(5)
+  } else if (pathVal.startsWith('file')) {
+    pathVal = pathVal.substring(4)
+  }
+  pathVal = pathVal.replace(/^\/+|\/+$/g, '')
+
+  let headersStr = ''
+  if (form.value.validate_method === 'headers') {
+    headersStr = form.value.headers.map(h => h.value.trim()).filter(Boolean).join(',')
+  }
+
+  return {
+    origin_id: form.value.origin_id,
+    path: pathVal,
+    validate_method: form.value.validate_method,
+    validate_headers: headersStr,
+    validate_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers') ? form.value.validate_url.trim() : '',
+    validate_fallback_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers') ? form.value.validate_fallback_url.trim() : '',
+    is_max_size: form.value.is_max_size,
+    value_max_size: form.value.value_max_size,
+    value_unit_size: form.value.value_unit_size,
+    is_extensions: form.value.is_extensions,
+    value_extensions: form.value.value_extensions.trim()
+  }
+}
+
 async function handleCreate() {
   if (!form.value.origin_id || !form.value.path) return
-  await rulesStore.createRule(form.value)
+  const payload = cleanFormPayload()
+  await rulesStore.createRule(payload)
   resetForm()
   showCreateModal.value = false
 }
 
 function openEdit(rule: Rule) {
   editTarget.value = rule
-  form.value = { ...rule }
+  const hdrs = rule.validate_headers 
+    ? rule.validate_headers.split(',').map(h => ({ id: Math.random().toString(36).substring(2), value: h }))
+    : [{ id: Math.random().toString(36).substring(2), value: '' }]
+  form.value = {
+    origin_id: rule.origin_id,
+    path: rule.path,
+    validate_method: rule.validate_method || '',
+    validate_headers: rule.validate_headers || '',
+    validate_url: rule.validate_url || '',
+    validate_fallback_url: rule.validate_fallback_url || '',
+    is_max_size: rule.is_max_size,
+    value_max_size: rule.value_max_size,
+    value_unit_size: rule.value_unit_size,
+    is_extensions: rule.is_extensions,
+    value_extensions: rule.value_extensions || '',
+    headers: hdrs
+  }
   showEditModal.value = true
 }
 
 async function handleEdit() {
   if (!editTarget.value) return
-  await rulesStore.updateRule(editTarget.value.id, form.value)
+  const payload = cleanFormPayload()
+  await rulesStore.updateRule(editTarget.value.id, payload)
   showEditModal.value = false
   editTarget.value = null
   resetForm()
 }
 
-async function handleDelete(id: string) {
-  if (confirm('Delete this rule?')) {
-    await rulesStore.deleteRule(id)
-  }
+function openDeleteConfirm(rule: Rule) {
+  deleteTarget.value = rule
+  showDeleteConfirm.value = true
+}
+
+async function handleDelete() {
+  if (!deleteTarget.value) return
+  await rulesStore.deleteRule(deleteTarget.value.id)
+  showDeleteConfirm.value = false
+  deleteTarget.value = null
 }
 </script>
 
@@ -151,7 +226,7 @@ async function handleDelete(id: string) {
 
         <div class="rule-card__actions">
           <OutlineButton @click="openEdit(rule)">Edit</OutlineButton>
-          <OutlineButton variant="danger" @click="handleDelete(rule.id)">Delete</OutlineButton>
+          <OutlineButton variant="danger" @click="openDeleteConfirm(rule)">Delete</OutlineButton>
         </div>
       </SageCard>
     </div>
@@ -171,17 +246,54 @@ async function handleDelete(id: string) {
             <option v-for="o in originsStore.origins" :key="o.id" :value="o.id">{{ o.domain }}</option>
           </select>
         </div>
+        
         <div class="field">
           <label class="field__label" for="rule-path">PATH</label>
-          <input id="rule-path" v-model="form.path" class="field__input" placeholder="/file/uploads" required />
+          <div class="path-input-wrapper">
+            <span class="path-prefix">/file/</span>
+            <input id="rule-path" v-model="form.path" class="field__input path-field" placeholder="uploads" required />
+          </div>
         </div>
+
         <div class="field">
           <label class="field__label" for="rule-method">VALIDATE METHOD</label>
-          <input id="rule-method" v-model="form.validate_method" class="field__input" placeholder="GET, POST" />
+          <select id="rule-method" v-model="form.validate_method" class="field__input">
+            <option value="">None (Public)</option>
+            <option value="JWT">JWT</option>
+            <option value="headers">Headers</option>
+            <option value="cache">Cache</option>
+          </select>
         </div>
-        <div class="field">
-          <label class="field__label" for="rule-url">VALIDATE URL</label>
-          <input id="rule-url" v-model="form.validate_url" class="field__input" placeholder="https://auth.example.com/validate" />
+
+        <!-- Headers list card -->
+        <div v-if="form.validate_method === 'headers'" class="headers-card">
+          <div class="headers-card__header">
+            <span class="headers-card__title">REQUIRED HEADERS</span>
+            <button type="button" class="headers-card__add" @click="addHeaderKey">+ Add Header</button>
+          </div>
+          <div class="headers-card__list">
+            <div v-for="(hdr, idx) in form.headers" :key="hdr.id" class="header-field-row">
+              <input
+                v-model="hdr.value"
+                type="text"
+                class="field__input header-key-input"
+                placeholder="X-Api-Key"
+                required
+              />
+              <button type="button" class="header-remove-btn" @click="removeHeaderKey(idx)">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Validate URL fields -->
+        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers'" class="field">
+          <label class="field__label" for="rule-url">VALIDATE URL (EXTERNAL TARGET)</label>
+          <input id="rule-url" v-model="form.validate_url" class="field__input" placeholder="https://api.example.com/auth/validate" required />
+        </div>
+        
+        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers'" class="field">
+          <label class="field__label" for="rule-fallback">FALLBACK REDIRECT URL (OPTIONAL)</label>
+          <input id="rule-fallback" v-model="form.validate_fallback_url" class="field__input" placeholder="https://example.com/login" />
         </div>
 
         <div class="field__row">
@@ -204,7 +316,7 @@ async function handleDelete(id: string) {
             <input type="checkbox" v-model="form.is_extensions" />
             <span>Restrict extensions</span>
           </label>
-          <input v-if="form.is_extensions" v-model="form.value_extensions" class="field__input" placeholder=".jpg,.png,.pdf" />
+          <input v-if="form.is_extensions" v-model="form.value_extensions" class="field__input" placeholder="jpg,png,pdf" />
         </div>
       </form>
       <template #footer>
@@ -212,6 +324,17 @@ async function handleDelete(id: string) {
         <MossButton @click="showEditModal ? handleEdit() : handleCreate()">
           {{ showEditModal ? 'Save Changes' : 'Create Rule' }}
         </MossButton>
+      </template>
+    </ModalDialog>
+
+    <!-- Delete Confirmation Modal -->
+    <ModalDialog v-if="showDeleteConfirm" title="Delete Rule" max-width="420px" @close="showDeleteConfirm = false">
+      <div style="font-family: var(--font-denim); font-size: 14px; color: var(--color-forest-ink); line-height: 1.5;">
+        Are you sure you want to delete rule for path <strong>/file/{{ deleteTarget?.path }}</strong>? This action cannot be undone.
+      </div>
+      <template #footer>
+        <OutlineButton @click="showDeleteConfirm = false">Cancel</OutlineButton>
+        <OutlineButton variant="danger" @click="handleDelete">Delete</OutlineButton>
       </template>
     </ModalDialog>
   </div>
@@ -403,5 +526,91 @@ async function handleDelete(id: string) {
   font-size: 14px;
   color: var(--color-forest-ink);
   cursor: pointer;
+}
+
+/* ───── Path Prefix Input ───── */
+.path-input-wrapper {
+  display: flex;
+  align-items: center;
+  background: var(--color-sage-paper);
+  border: 0.5px solid var(--color-lichen);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+.path-prefix {
+  padding: 12px 0 12px 16px;
+  font-family: var(--font-denim);
+  font-size: 14px;
+  color: var(--color-slate-smoke);
+  user-select: none;
+}
+.path-field {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding-left: 4px !important;
+}
+.path-input-wrapper:focus-within {
+  border-color: var(--color-moss);
+  box-shadow: 0 0 0 3px rgba(133, 192, 147, 0.15);
+}
+
+/* ───── Headers configuration card ───── */
+.headers-card {
+  background: var(--color-bone-white);
+  border: 0.5px solid var(--color-lichen);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-12);
+}
+.headers-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.headers-card__title {
+  font-family: var(--font-cinetype);
+  font-size: 11px;
+  letter-spacing: 0.20em;
+  color: var(--color-slate-smoke);
+}
+.headers-card__add {
+  background: none;
+  border: none;
+  color: var(--color-deep-fern);
+  font-family: var(--font-denim);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.headers-card__add:hover {
+  text-decoration: underline;
+}
+.headers-card__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+.header-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+}
+.header-key-input {
+  flex: 1;
+}
+.header-remove-btn {
+  background: none;
+  border: none;
+  font-size: 16px;
+  color: var(--color-slate-smoke);
+  cursor: pointer;
+  padding: var(--spacing-4);
+}
+.header-remove-btn:hover {
+  color: #8b2020;
 }
 </style>

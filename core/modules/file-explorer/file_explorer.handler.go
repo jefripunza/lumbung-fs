@@ -106,7 +106,8 @@ func ListItems(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		relPath, _ := filepath.Rel(variables.BucketDir, filepath.Join(targetDir, entry.Name()))
+		bucketAbs, _ := filepath.Abs(variables.BucketDir)
+		relPath, _ := filepath.Rel(bucketAbs, filepath.Join(targetDir, entry.Name()))
 
 		items = append(items, FileItem{
 			Name:       entry.Name(),
@@ -162,7 +163,8 @@ func CreateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	relPath, _ := filepath.Rel(variables.BucketDir, targetDir)
+	bucketAbs, _ := filepath.Abs(variables.BucketDir)
+	relPath, _ := filepath.Rel(bucketAbs, targetDir)
 	respondWithJSON(w, http.StatusCreated, map[string]string{
 		"message": "Folder created successfully",
 		"path":    relPath,
@@ -225,7 +227,8 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	relPath, _ := filepath.Rel(variables.BucketDir, targetFilePath)
+	bucketAbs, _ := filepath.Abs(variables.BucketDir)
+	relPath, _ := filepath.Rel(bucketAbs, targetFilePath)
 	respondWithJSON(w, http.StatusCreated, map[string]interface{}{
 		"message":           "File uploaded successfully",
 		"original_filename": header.Filename,

@@ -1,0 +1,28 @@
+yang masih belum sesuai:
+  - Origin
+    - button edit
+      - popup edit, Block this origin hapus saja
+    - button delete
+      - tambahkan popup dialog, jangan pakai alert
+    - button add origin / button edit
+      - jika input origin, jika ada http:// atau https:// maka hapus, tidak perlu input, pastikan validasi di backend benar
+  - Rules
+    - button add rule / edit rule
+      - di path, jangan lagi isi "/file", di sebelah kiri field nya ada tulisan "/file" dan di field nya cuman menambahkan sisa path nya nanti di jadikan 1 pas di backend (yang di simpan hanya path di field saja tanpa prefix "/file", karena itu nggak perlu)
+      - di VALIDATE METHOD, kan sudah jelas di PLAN.md, ini sebenernya adalah dropdown (JWT, headers, cache). jika JWT dan cache maka tidak perlu muncul apapun, jika headers maka muncul card dengan button "add header" maka muncul field yaitu "key" dan boleh lebih dari 1 headers.
+      - di field belum ada field untuk validate_url (yaitu target untuk validasi, ini butuh service / backend lain untuk validasi)
+    - button delete
+      - tambahkan popup dialog, jangan pakai alert
+  - Storage Explorer
+    - saat masuk ke halaman menu ini, harusnya pertama kali di suruh untuk pilih origin, baru muncul semua folder dan file
+    - delete folder dan file masih belum work
+
+revisi di PLAN.md dan revisi kode;
+
+fix, focus, revisi, no mistake;
+
+
+part 2
+- semua popup tidak boleh keluar / close jika di klik di luar popup (outside click)
+- jika origin di hapus, maka cascade berlaku di table2 yang terikat dengan origin itu
+- 

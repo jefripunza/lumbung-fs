@@ -183,42 +183,81 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 		}
 	}
 
-	// 3. Authentication Verification (External Endpoint check)
-	if matchedRule.ValidateMethod != "" && matchedRule.ValidateURL != "" {
-		client := &http.Client{Timeout: 5 * time.Second}
-		
-		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, matchedRule.ValidateURL, nil)
-		if err != nil {
-			return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, err
-		}
+	// 3. Authentication Verification (External Endpoint check or local check)
+	if matchedRule.ValidateMethod != "" {
+		methodLower := strings.ToLower(matchedRule.ValidateMethod)
 
-		// Forward specific credentials headers
-		if auth := r.Header.Get("Authorization"); auth != "" {
-			req.Header.Set("Authorization", auth)
-		}
-		if cookie := r.Header.Get("Cookie"); cookie != "" {
-			req.Header.Set("Cookie", cookie)
-		}
-		
-		// Copy any headers that start with custom prefixes or validation methods
-		for key, vals := range r.Header {
-			if strings.HasPrefix(strings.ToLower(key), "x-") {
-				for _, val := range vals {
-					req.Header.Add(key, val)
+		// Check headers if method is "headers"
+		if methodLower == "headers" && matchedRule.ValidateHeaders != "" {
+			configuredHeaders := strings.Split(matchedRule.ValidateHeaders, ",")
+			for _, hKey := range configuredHeaders {
+				hKey = strings.TrimSpace(hKey)
+				if hKey != "" {
+					if r.Header.Get(hKey) == "" {
+						return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("missing required header: %s", hKey)
+					}
 				}
 			}
 		}
 
-		resp, err := client.Do(req)
-		if err != nil {
-			return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, err
+		// Check JWT if method is "jwt"
+		if methodLower == "jwt" {
+			if r.Header.Get("Authorization") == "" {
+				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("missing Authorization header for JWT validation")
+			}
 		}
-		defer resp.Body.Close()
 
-		// Read small body for debug logging if necessary
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("external validation returned status %d: %s", resp.StatusCode, string(bodyBytes))
+		// If external validation url is specified, perform external validation request
+		if matchedRule.ValidateURL != "" {
+			client := &http.Client{Timeout: 5 * time.Second}
+
+			req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, matchedRule.ValidateURL, nil)
+			if err != nil {
+				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, err
+			}
+
+			// Forward credentials
+			if auth := r.Header.Get("Authorization"); auth != "" {
+				req.Header.Set("Authorization", auth)
+			}
+			if cookie := r.Header.Get("Cookie"); cookie != "" {
+				req.Header.Set("Cookie", cookie)
+			}
+
+			// Forward custom configured headers
+			if matchedRule.ValidateHeaders != "" {
+				configuredHeaders := strings.Split(matchedRule.ValidateHeaders, ",")
+				for _, hKey := range configuredHeaders {
+					hKey = strings.TrimSpace(hKey)
+					if hKey != "" {
+						if vals := r.Header[http.CanonicalHeaderKey(hKey)]; len(vals) > 0 {
+							for _, val := range vals {
+								req.Header.Add(hKey, val)
+							}
+						}
+					}
+				}
+			}
+
+			// Forward other standard X- headers
+			for key, vals := range r.Header {
+				if strings.HasPrefix(strings.ToLower(key), "x-") {
+					for _, val := range vals {
+						req.Header.Add(key, val)
+					}
+				}
+			}
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("external validation returned status %d: %s", resp.StatusCode, string(bodyBytes))
+			}
 		}
 	}
 

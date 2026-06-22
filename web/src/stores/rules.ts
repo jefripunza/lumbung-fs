@@ -7,6 +7,7 @@ export interface Rule {
   origin_id: string
   path: string
   validate_method: string
+  validate_headers?: string
   validate_url: string
   validate_fallback_url: string
   is_max_size: boolean
