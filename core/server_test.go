@@ -14,6 +14,8 @@ import (
 	"lumbung-fs/core/database"
 	"lumbung-fs/core/middlewares"
 	"lumbung-fs/core/modules"
+	"lumbung-fs/core/modules/auth"
+	"lumbung-fs/core/modules/file"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
 	fileExplorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
@@ -48,7 +50,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 }
 
 func TestVerifyMD5(t *testing.T) {
-	if !verifyMD5("123456", defaultMD5Hash) {
+	if !auth.VerifyMD5("123456", auth.DefaultMD5Hash) {
 		t.Error("verifyMD5 failed to verify default hash")
 	}
 }
@@ -379,7 +381,7 @@ func TestUploadAndDownloadFileServing(t *testing.T) {
 	db.Create(&rule)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/file/", clientFileHandler)
+	mux.HandleFunc("/file/", file.ClientFileHandler)
 	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// 1. Upload File
@@ -445,7 +447,7 @@ func TestUploadAndDownloadFileServingCompressedAndEncrypted(t *testing.T) {
 	db.Create(&rule)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/file/", clientFileHandler)
+	mux.HandleFunc("/file/", file.ClientFileHandler)
 	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// 1. Upload File
@@ -637,7 +639,7 @@ func TestRuleEncryptionTransition(t *testing.T) {
 			rule.UpdateRule(w, r)
 		}
 	})
-	mux.HandleFunc("/file/", clientFileHandler)
+	mux.HandleFunc("/file/", file.ClientFileHandler)
 	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// 2. Perform rule update: transition from IsEncrypt=false to IsEncrypt=true
@@ -673,7 +675,7 @@ func TestRuleEncryptionTransition(t *testing.T) {
 		t.Errorf("Expected file2 on disk to be encrypted, but got raw content")
 	}
 
-	// 4. Verify downloading/serving via clientFileHandler yields DECRYPTED files
+	// 4. Verify downloading/serving via file.ClientFileHandler yields DECRYPTED files
 	reqDownload := httptest.NewRequest(http.MethodGet, "/file/trans-docs/file1.txt", nil)
 	reqDownload.Header.Set("Origin", "http://testserve.com")
 	wDownload := httptest.NewRecorder()

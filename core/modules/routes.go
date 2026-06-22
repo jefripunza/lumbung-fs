@@ -3,7 +3,10 @@ package modules
 import (
 	"net/http"
 
+	"lumbung-fs/core/modules/auth"
+	"lumbung-fs/core/modules/file"
 	"lumbung-fs/core/modules/file-explorer"
+	"lumbung-fs/core/modules/health"
 	"lumbung-fs/core/modules/origin"
 	"lumbung-fs/core/modules/rule"
 	"lumbung-fs/core/modules/upload"
@@ -15,4 +18,7 @@ func RegisterAllRoutes(mux *http.ServeMux) {
 	rule.RegisterRoutes(mux)
 	file_explorer.RegisterRoutes(mux)
 	upload.RegisterRoutes(mux)
+	auth.RegisterRoutes(mux)
+	file.RegisterRoutes(mux)
+	health.RegisterRoutes(mux)
 }
