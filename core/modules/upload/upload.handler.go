@@ -11,7 +11,8 @@ import (
 	"time"
 
 	"lumbung-fs/core/database"
-	"lumbung-fs/core/middleware"
+	"lumbung-fs/core/functions"
+	"lumbung-fs/core/middlewares"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
 	explorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
@@ -139,7 +140,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 
 		ext := filepath.Ext(header.Filename)
 
-		allowed, fallbackURL, status, err := middleware.EvaluatePathRules(r, origin.ID, evalPath, header.Size, ext)
+		allowed, fallbackURL, status, err := middlewares.EvaluatePathRules(r, origin.ID, evalPath, header.Size, ext)
 		if !allowed {
 			if fallbackURL != "" {
 				http.Redirect(w, r, fallbackURL, http.StatusFound)
@@ -184,14 +185,14 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		var compress, encrypt bool
 		var compressLevel int
 		var encryptionKey string
-		if matchedRule, err := middleware.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
+		if matchedRule, err := middlewares.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
 			compress = matchedRule.IsCompress
 			compressLevel = matchedRule.CompressLevel
 			encrypt = matchedRule.IsEncrypt
 			encryptionKey = matchedRule.EncryptionKey
 		}
 
-		processedBytes, err := variables.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
+		processedBytes, err := functions.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
 		if err != nil {
 			respondWithError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -229,7 +230,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestDomain := middleware.ResolveDomain(r)
+	requestDomain := middlewares.ResolveDomain(r)
 
 	var origin originModel.Origin
 	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
@@ -259,7 +260,7 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	// Clean destination subpath relative to origin
 	evalPath := strings.Trim(r.FormValue("path"), "/")
 
-	allowed, fallbackURL, status, err := middleware.EvaluatePathRules(r, origin.ID, evalPath, header.Size, ext)
+	allowed, fallbackURL, status, err := middlewares.EvaluatePathRules(r, origin.ID, evalPath, header.Size, ext)
 	if !allowed {
 		if fallbackURL != "" {
 			http.Redirect(w, r, fallbackURL, http.StatusFound)
@@ -303,14 +304,14 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 	var compress, encrypt bool
 	var compressLevel int
 	var encryptionKey string
-	if matchedRule, err := middleware.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
+	if matchedRule, err := middlewares.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
 		compress = matchedRule.IsCompress
 		compressLevel = matchedRule.CompressLevel
 		encrypt = matchedRule.IsEncrypt
 		encryptionKey = matchedRule.EncryptionKey
 	}
 
-	processedBytes, err := variables.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
+	processedBytes, err := functions.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -349,7 +350,7 @@ func PrepareUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestDomain := middleware.ResolveDomain(r)
+	requestDomain := middlewares.ResolveDomain(r)
 
 	var origin originModel.Origin
 	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {

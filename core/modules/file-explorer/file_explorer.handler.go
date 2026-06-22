@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"lumbung-fs/core/database"
-	"lumbung-fs/core/middleware"
+	"lumbung-fs/core/functions"
+	"lumbung-fs/core/middlewares"
 	explorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
 	"lumbung-fs/core/variables"
@@ -234,7 +235,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 	var compressLevel int
 	var encryptionKey string
 	if origin, evalPath := ResolveOriginFromSubpath(targetSub); origin != nil {
-		if matchedRule, err := middleware.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
+		if matchedRule, err := middlewares.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
 			compress = matchedRule.IsCompress
 			compressLevel = matchedRule.CompressLevel
 			encrypt = matchedRule.IsEncrypt
@@ -242,7 +243,7 @@ func UploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	processedBytes, err := variables.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
+	processedBytes, err := functions.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -304,7 +305,7 @@ func DownloadFile(w http.ResponseWriter, r *http.Request) {
 	var compressLevel int
 	var encryptionKey string
 	if origin, evalPath := ResolveOriginFromSubpath(subpath); origin != nil {
-		if matchedRule, err := middleware.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
+		if matchedRule, err := middlewares.FindMatchingRule(origin.ID, evalPath); err == nil && matchedRule != nil {
 			compress = matchedRule.IsCompress
 			compressLevel = matchedRule.CompressLevel
 			encrypt = matchedRule.IsEncrypt
@@ -319,7 +320,7 @@ func DownloadFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		processedBytes, err := variables.ProcessDownloadData(rawBytes, compress, compressLevel, encrypt, encryptionKey)
+		processedBytes, err := functions.ProcessDownloadData(rawBytes, compress, compressLevel, encrypt, encryptionKey)
 		if err != nil {
 			respondWithError(w, http.StatusInternalServerError, "Decompression/Decryption failed: "+err.Error())
 			return

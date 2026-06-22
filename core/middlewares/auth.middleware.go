@@ -1,4 +1,4 @@
-package middleware
+package middlewares
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"lumbung-fs/core/database"
 	ruleModel "lumbung-fs/core/modules/rule/model"
-	
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -21,7 +21,7 @@ type contextKey string
 
 const (
 	AdminUserContextKey contextKey = "admin_user"
-	defaultSecret                  = "lumbungfs-super-secret-key-change-me-12345"
+	defaultSecret       string     = "lumbungfs-super-secret-key-change-me-12345"
 )
 
 func init() {
@@ -78,7 +78,7 @@ func AdminAuth(next http.Handler) http.Handler {
 		}
 
 		username, _ := claims["sub"].(string)
-		
+
 		ctx := context.WithValue(r.Context(), AdminUserContextKey, username)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -171,7 +171,7 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 	if matchedRule.IsExtensions && fileExtension != "" {
 		allowedExts := strings.Split(strings.ToLower(matchedRule.ValueExtensions), ",")
 		extClean := strings.TrimPrefix(strings.ToLower(fileExtension), ".")
-		
+
 		extMatched := false
 		for _, allowed := range allowedExts {
 			if strings.TrimSpace(allowed) == extClean {
@@ -179,7 +179,7 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 				break
 			}
 		}
-		
+
 		if !extMatched {
 			return false, "", http.StatusBadRequest, fmt.Errorf("file extension .%s is not allowed", extClean)
 		}

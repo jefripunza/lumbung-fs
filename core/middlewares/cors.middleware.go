@@ -1,4 +1,4 @@
-package middleware
+package middlewares
 
 import (
 	"log"
@@ -16,19 +16,19 @@ func ParseDomain(raw string) string {
 	if raw == "" {
 		return ""
 	}
-	
+
 	// Strip protocols
 	if strings.HasPrefix(raw, "https://") {
 		raw = raw[8:]
 	} else if strings.HasPrefix(raw, "http://") {
 		raw = raw[7:]
 	}
-	
+
 	// Strip path (if any)
 	if idx := strings.Index(raw, "/"); idx != -1 {
 		raw = raw[:idx]
 	}
-	
+
 	// Check for port
 	host, port, err := net.SplitHostPort(raw)
 	if err == nil {
@@ -38,7 +38,7 @@ func ParseDomain(raw string) string {
 			raw = host
 		}
 	}
-	
+
 	return strings.ToLower(raw)
 }
 
@@ -114,7 +114,7 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			
+
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -126,12 +126,12 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 		// 2. Validate domain against DB
 		var dbOrigin originModel.Origin
 		result := database.DB.Where("domain = ?", requestDomain).First(&dbOrigin)
-		
+
 		if result.Error != nil {
 			// Domain not registered: Log or update UnknownOrigin
 			ip := GetClientIP(r)
 			log.Printf("Unknown origin request: domain=%s, ip=%s", requestDomain, ip)
-			
+
 			var existing originModel.UnknownOrigin
 			if err := database.DB.Where("domain = ?", requestDomain).First(&existing).Error; err == nil {
 				// Update existing entry
@@ -147,7 +147,7 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 				}
 				database.DB.Create(&unknown)
 			}
-			
+
 			http.Error(w, "Forbidden: Unknown origin domain", http.StatusForbidden)
 			return
 		}

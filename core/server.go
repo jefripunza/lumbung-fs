@@ -13,7 +13,8 @@ import (
 	"strings"
 
 	"lumbung-fs/core/database"
-	"lumbung-fs/core/middleware"
+	"lumbung-fs/core/functions"
+	"lumbung-fs/core/middlewares"
 	"lumbung-fs/core/modules"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
 	fileExplorerModel "lumbung-fs/core/modules/file-explorer/model"
@@ -79,7 +80,7 @@ func ServerStart() {
 	// AdminAuth is applied individually inside RegisterAllRoutes or via a sub-router pattern.
 	// For standard ServeMux, we can wrap the entire multiplexer with CORSAndOriginHandler
 	// and then check JWT inside /api/... handlers except login.
-	mainHandler := middleware.CORSAndOriginHandler(adminAuthWrapper(mux))
+	mainHandler := middlewares.CORSAndOriginHandler(adminAuthWrapper(mux))
 
 	port := 8080
 	log.Printf("LumbungFS server successfully started on port :%d", port)
@@ -93,8 +94,8 @@ func adminAuthWrapper(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if strings.HasPrefix(path, "/api/") && path != "/api/auth/login" {
-			// Wrap with AdminAuth middleware logic
-			middleware.AdminAuth(next).ServeHTTP(w, r)
+			// Wrap with AdminAuth middlewares logic
+			middlewares.AdminAuth(next).ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -171,7 +172,7 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := middleware.GenerateJWT(credentials.Username)
+	token, err := middlewares.GenerateJWT(credentials.Username)
 	if err != nil {
 		http.Error(w, "Internal server error: token generation failed", http.StatusInternalServerError)
 		return
@@ -194,7 +195,7 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve origin domain from request
-	requestDomain := middleware.ResolveDomain(r)
+	requestDomain := middlewares.ResolveDomain(r)
 
 	// Find origin record in DB to get ID and snake_case name
 	var origin originModel.Origin
@@ -231,7 +232,7 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 
 		// 2. Evaluate rules (Extension and External Auth checks)
 		ext := filepath.Ext(targetPath)
-		allowed, fallbackURL, status, err := middleware.EvaluatePathRules(r, origin.ID, subpath, info.Size(), ext)
+		allowed, fallbackURL, status, err := middlewares.EvaluatePathRules(r, origin.ID, subpath, info.Size(), ext)
 		if !allowed {
 			if fallbackURL != "" {
 				http.Redirect(w, r, fallbackURL, http.StatusFound)
@@ -249,7 +250,7 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 		var compress, encrypt bool
 		var compressLevel int
 		var encryptionKey string
-		if matchedRule, err := middleware.FindMatchingRule(origin.ID, subpath); err == nil && matchedRule != nil {
+		if matchedRule, err := middlewares.FindMatchingRule(origin.ID, subpath); err == nil && matchedRule != nil {
 			compress = matchedRule.IsCompress
 			compressLevel = matchedRule.CompressLevel
 			encrypt = matchedRule.IsEncrypt
@@ -263,7 +264,7 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			processedBytes, err := variables.ProcessDownloadData(rawBytes, compress, compressLevel, encrypt, encryptionKey)
+			processedBytes, err := functions.ProcessDownloadData(rawBytes, compress, compressLevel, encrypt, encryptionKey)
 			if err != nil {
 				http.Error(w, "Decompression/Decryption failed: "+err.Error(), http.StatusInternalServerError)
 				return
@@ -300,7 +301,7 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 		ext := filepath.Ext(header.Filename)
 
 		// Evaluate path rules (including size, extension, and auth checks)
-		allowed, fallbackURL, status, err := middleware.EvaluatePathRules(r, origin.ID, subpath, header.Size, ext)
+		allowed, fallbackURL, status, err := middlewares.EvaluatePathRules(r, origin.ID, subpath, header.Size, ext)
 		if !allowed {
 			if fallbackURL != "" {
 				http.Redirect(w, r, fallbackURL, http.StatusFound)
@@ -344,14 +345,14 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 		var compress, encrypt bool
 		var compressLevel int
 		var encryptionKey string
-		if matchedRule, err := middleware.FindMatchingRule(origin.ID, subpath); err == nil && matchedRule != nil {
+		if matchedRule, err := middlewares.FindMatchingRule(origin.ID, subpath); err == nil && matchedRule != nil {
 			compress = matchedRule.IsCompress
 			compressLevel = matchedRule.CompressLevel
 			encrypt = matchedRule.IsEncrypt
 			encryptionKey = matchedRule.EncryptionKey
 		}
 
-		processedBytes, err := variables.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
+		processedBytes, err := functions.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -405,5 +406,3 @@ func checkApiKey(r *http.Request, originApiKey string) bool {
 	}
 	return apiKey == originApiKey
 }
-
-

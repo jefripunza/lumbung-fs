@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"lumbung-fs/core/database"
+	"lumbung-fs/core/functions"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
 	originModel "lumbung-fs/core/modules/origin/model"
 	ruleModel "lumbung-fs/core/modules/rule/model"
@@ -35,10 +36,10 @@ func ListRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	originID := r.URL.Query().Get("origin_id")
-	
+
 	var rules []ruleModel.Rule
 	var err error
-	
+
 	if originID != "" {
 		err = database.DB.Where("origin_id = ?", originID).Find(&rules).Error
 	} else {
@@ -307,13 +308,13 @@ func ProcessRuleEncryptionTransition(originID string, path string, oldIsEncrypt 
 
 	var oldDerivedKey, newDerivedKey []byte
 	if action == "decrypt" || action == "rekey" {
-		oldDerivedKey, err = variables.DeriveKey(oldKey)
+		oldDerivedKey, err = functions.DeriveKey(oldKey)
 		if err != nil {
 			return err
 		}
 	}
 	if action == "encrypt" || action == "rekey" {
-		newDerivedKey, err = variables.DeriveKey(newKey)
+		newDerivedKey, err = functions.DeriveKey(newKey)
 		if err != nil {
 			return err
 		}
@@ -335,23 +336,23 @@ func ProcessRuleEncryptionTransition(originID string, path string, oldIsEncrypt 
 		var processed []byte
 		switch action {
 		case "encrypt":
-			processed, err = variables.EncryptAESGCM(data, newDerivedKey)
+			processed, err = functions.EncryptAESGCM(data, newDerivedKey)
 			if err != nil {
 				return fmt.Errorf("failed to encrypt file %s: %w", filePath, err)
 			}
 		case "decrypt":
-			processed, err = variables.DecryptAESGCM(data, oldDerivedKey)
+			processed, err = functions.DecryptAESGCM(data, oldDerivedKey)
 			if err != nil {
 				return fmt.Errorf("failed to decrypt file %s: %w", filePath, err)
 			}
 		case "rekey":
 			// Decrypt with old key first
-			decrypted, err := variables.DecryptAESGCM(data, oldDerivedKey)
+			decrypted, err := functions.DecryptAESGCM(data, oldDerivedKey)
 			if err != nil {
 				return fmt.Errorf("failed to decrypt file %s during rekey: %w", filePath, err)
 			}
 			// Encrypt with new key
-			processed, err = variables.EncryptAESGCM(decrypted, newDerivedKey)
+			processed, err = functions.EncryptAESGCM(decrypted, newDerivedKey)
 			if err != nil {
 				return fmt.Errorf("failed to encrypt file %s during rekey: %w", filePath, err)
 			}

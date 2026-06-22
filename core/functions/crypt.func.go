@@ -1,4 +1,4 @@
-package variables
+package functions
 
 import (
 	"crypto/aes"

@@ -12,13 +12,13 @@ import (
 	"testing"
 
 	"lumbung-fs/core/database"
-	"lumbung-fs/core/middleware"
+	"lumbung-fs/core/middlewares"
 	"lumbung-fs/core/modules"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
 	fileExplorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
-	ruleModel "lumbung-fs/core/modules/rule/model"
 	"lumbung-fs/core/modules/rule"
+	ruleModel "lumbung-fs/core/modules/rule/model"
 	"lumbung-fs/core/modules/upload"
 	"lumbung-fs/core/variables"
 
@@ -65,7 +65,7 @@ func TestParseDomain(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		actual := middleware.ParseDomain(tc.input)
+		actual := middlewares.ParseDomain(tc.input)
 		if actual != tc.expected {
 			t.Errorf("ParseDomain(%q) = %q; expected %q", tc.input, actual, tc.expected)
 		}
@@ -77,7 +77,7 @@ func TestResolveDomain(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
 	req.Header.Set("Origin", "http://origin-domain.com:8080")
 	req.Host = "host-domain.com:9090"
-	if actual := middleware.ResolveDomain(req); actual != "origin-domain.com:8080" {
+	if actual := middlewares.ResolveDomain(req); actual != "origin-domain.com:8080" {
 		t.Errorf("ResolveDomain failed for Origin header: expected 'origin-domain.com:8080', got '%s'", actual)
 	}
 
@@ -85,7 +85,7 @@ func TestResolveDomain(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
 	req.Header.Set("X-Forwarded-Host", "forwarded-domain.com:7070, proxy-domain.com")
 	req.Host = "host-domain.com:9090"
-	if actual := middleware.ResolveDomain(req); actual != "forwarded-domain.com:7070" {
+	if actual := middlewares.ResolveDomain(req); actual != "forwarded-domain.com:7070" {
 		t.Errorf("ResolveDomain failed for X-Forwarded-Host header: expected 'forwarded-domain.com:7070', got '%s'", actual)
 	}
 
@@ -93,7 +93,7 @@ func TestResolveDomain(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
 	req.Header.Set("X-Original-Host", "original-domain.com:6060")
 	req.Host = "host-domain.com:9090"
-	if actual := middleware.ResolveDomain(req); actual != "original-domain.com:6060" {
+	if actual := middlewares.ResolveDomain(req); actual != "original-domain.com:6060" {
 		t.Errorf("ResolveDomain failed for X-Original-Host header: expected 'original-domain.com:6060', got '%s'", actual)
 	}
 
@@ -101,18 +101,17 @@ func TestResolveDomain(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
 	req.Header.Set("Referer", "http://referer-domain.com:5050/some/path")
 	req.Host = "host-domain.com:9090"
-	if actual := middleware.ResolveDomain(req); actual != "referer-domain.com:5050" {
+	if actual := middlewares.ResolveDomain(req); actual != "referer-domain.com:5050" {
 		t.Errorf("ResolveDomain failed for Referer header: expected 'referer-domain.com:5050', got '%s'", actual)
 	}
 
 	// Test Host header fallback
 	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
 	req.Host = "host-domain.com:9090"
-	if actual := middleware.ResolveDomain(req); actual != "host-domain.com:9090" {
+	if actual := middlewares.ResolveDomain(req); actual != "host-domain.com:9090" {
 		t.Errorf("ResolveDomain failed for Host header: expected 'host-domain.com:9090', got '%s'", actual)
 	}
 }
-
 
 func TestDomainToSnake(t *testing.T) {
 	tests := []struct {
@@ -137,13 +136,13 @@ func TestJWTGenerationAndAuth(t *testing.T) {
 	setupTestDB(t)
 
 	// Generate JWT
-	token, err := middleware.GenerateJWT("admin")
+	token, err := middlewares.GenerateJWT("admin")
 	if err != nil {
 		t.Fatalf("failed to generate JWT: %v", err)
 	}
 
 	// Create test server wrapper
-	handler := middleware.AdminAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middlewares.AdminAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Mock success handler
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
@@ -185,7 +184,7 @@ func TestCORSAndOriginMiddleware(t *testing.T) {
 	db.Create(&allowed)
 	db.Create(&blocked)
 
-	handler := middleware.CORSAndOriginHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := middlewares.CORSAndOriginHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Success"))
 	}))
@@ -246,19 +245,19 @@ func TestEvaluatePathRules(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/file/images/upload", nil)
 
 	// Test Size: Under limit
-	allowed, _, _, err := middleware.EvaluatePathRules(req, origin.ID, "images/pic.png", 1*1024*1024, "png")
+	allowed, _, _, err := middlewares.EvaluatePathRules(req, origin.ID, "images/pic.png", 1*1024*1024, "png")
 	if !allowed || err != nil {
 		t.Errorf("Expected allowed=true under limits: %v", err)
 	}
 
 	// Test Size: Exceed limit
-	allowed, _, _, err = middleware.EvaluatePathRules(req, origin.ID, "images/pic.png", 3*1024*1024, "png")
+	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "images/pic.png", 3*1024*1024, "png")
 	if allowed || err == nil {
 		t.Error("Expected disallowed due to size limit exceedance")
 	}
 
 	// Test Extension: Not allowed
-	allowed, _, _, err = middleware.EvaluatePathRules(req, origin.ID, "images/document.pdf", 500, "pdf")
+	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "images/document.pdf", 500, "pdf")
 	if allowed || err == nil {
 		t.Error("Expected disallowed due to invalid extension")
 	}
@@ -294,10 +293,10 @@ func TestAPIRoutingAndDashboardFlow(t *testing.T) {
 	modules.RegisterAllRoutes(mux)
 
 	// Create test token
-	token, _ := middleware.GenerateJWT("admin")
+	token, _ := middlewares.GenerateJWT("admin")
 
 	// Create test server wrapper
-	handler := middleware.CORSAndOriginHandler(adminAuthWrapper(mux))
+	handler := middlewares.CORSAndOriginHandler(adminAuthWrapper(mux))
 
 	// 1. Post to create origin
 	originBody, _ := json.Marshal(map[string]interface{}{
@@ -381,7 +380,7 @@ func TestUploadAndDownloadFileServing(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/file/", clientFileHandler)
-	handler := middleware.CORSAndOriginHandler(mux)
+	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// 1. Upload File
 	body := &bytes.Buffer{}
@@ -447,7 +446,7 @@ func TestUploadAndDownloadFileServingCompressedAndEncrypted(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/file/", clientFileHandler)
-	handler := middleware.CORSAndOriginHandler(mux)
+	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// 1. Upload File
 	body := &bytes.Buffer{}
@@ -505,7 +504,7 @@ func TestGeneratePresignedURLRest(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/upload/prepare", upload.PrepareUploadHandler)
-	handler := middleware.CORSAndOriginHandler(mux)
+	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// 1. Test JSON request body
 	jsonPayload := []byte(`{"path": "documents/nested"}`)
@@ -561,7 +560,7 @@ func TestPresignedExpiredTokenMultipartJSONResponse(t *testing.T) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/upload", upload.UploadHandler)
-	handler := middleware.CORSAndOriginHandler(mux)
+	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// Hit /upload?token=expired-token with Content-Type multipart/form-data
 	req := httptest.NewRequest(http.MethodPost, "/upload?token=expired-token", nil)
@@ -607,9 +606,9 @@ func TestRuleEncryptionTransition(t *testing.T) {
 
 	// Create path rule for trans-docs with encryption DISABLED initially
 	rRule := ruleModel.Rule{
-		OriginID:   origin.ID,
-		Path:       "trans-docs",
-		IsEncrypt:  false,
+		OriginID:  origin.ID,
+		Path:      "trans-docs",
+		IsEncrypt: false,
 	}
 	db.Create(&rRule)
 
@@ -639,7 +638,7 @@ func TestRuleEncryptionTransition(t *testing.T) {
 		}
 	})
 	mux.HandleFunc("/file/", clientFileHandler)
-	handler := middleware.CORSAndOriginHandler(mux)
+	handler := middlewares.CORSAndOriginHandler(mux)
 
 	// 2. Perform rule update: transition from IsEncrypt=false to IsEncrypt=true
 	payloadJSON := []byte(`{
@@ -713,4 +712,3 @@ func TestRuleEncryptionTransition(t *testing.T) {
 		t.Errorf("Expected file2 on disk to be decrypted back to plain text, got: %s", string(f2Dec))
 	}
 }
-
