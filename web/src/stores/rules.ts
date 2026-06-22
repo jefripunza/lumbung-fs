@@ -15,6 +15,10 @@ export interface Rule {
   value_unit_size: string
   is_extensions: boolean
   value_extensions: string
+  is_compress: boolean
+  compress_level: number
+  is_encrypt: boolean
+  encryption_key: string
 }
 
 export const useRulesStore = defineStore('rules', () => {

@@ -98,38 +98,24 @@ func ParseSizeInBytes(value int, unit string) int64 {
 	return int64(value) * multiplier
 }
 
-// EvaluatePathRules checks all path-based rules for a given origin
-// Returns (isAllowed, redirectURL, statusCode, err)
-func EvaluatePathRules(r *http.Request, originID string, path string, fileSize int64, fileExtension string) (bool, string, int, error) {
-	// Clean path and separate segments
+// FindMatchingRule resolves the matched rule for a given path under an origin
+func FindMatchingRule(originID string, path string) (*ruleModel.Rule, error) {
 	cleanPath := strings.Trim(path, "/")
 	segments := strings.Split(cleanPath, "/")
 
-	// Fetch rules for this origin
 	var rules []ruleModel.Rule
 	if err := database.DB.Where("origin_id = ?", originID).Find(&rules).Error; err != nil {
-		return false, "", http.StatusInternalServerError, err
+		return nil, err
 	}
 
-	if len(rules) == 0 {
-		return true, "", http.StatusOK, nil
-	}
-
-	// Determine if any rule path matches segments of the cleanPath
-	// E.g., rule.Path = "ktp" matches "user/ktp/photo.png"
-	var matchedRule *ruleModel.Rule
 	for _, rule := range rules {
 		rulePathClean := strings.Trim(rule.Path, "/")
-		
-		// Exact match or partial match on segments
 		matchFound := false
 		if rulePathClean == cleanPath {
 			matchFound = true
 		} else {
-			// Check if rule.Path is a segment in the request path
 			ruleSegments := strings.Split(rulePathClean, "/")
 			if len(ruleSegments) <= len(segments) {
-				// Simple matching: check if ruleSegments is a prefix or sub-slice
 				for i := 0; i <= len(segments)-len(ruleSegments); i++ {
 					match := true
 					for j := 0; j < len(ruleSegments); j++ {
@@ -147,9 +133,19 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 		}
 
 		if matchFound {
-			matchedRule = &rule
-			break
+			return &rule, nil
 		}
+	}
+
+	return nil, nil
+}
+
+// EvaluatePathRules checks all path-based rules for a given origin
+// Returns (isAllowed, redirectURL, statusCode, err)
+func EvaluatePathRules(r *http.Request, originID string, path string, fileSize int64, fileExtension string) (bool, string, int, error) {
+	matchedRule, err := FindMatchingRule(originID, path)
+	if err != nil {
+		return false, "", http.StatusInternalServerError, err
 	}
 
 	// If no rules matched the path, allow request for GET, but deny for uploads (POST/PUT)

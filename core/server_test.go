@@ -18,6 +18,7 @@ import (
 	fileExplorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
 	ruleModel "lumbung-fs/core/modules/rule/model"
+	"lumbung-fs/core/modules/upload"
 	"lumbung-fs/core/variables"
 
 	"github.com/glebarez/sqlite"
@@ -418,6 +419,82 @@ func TestUploadAndDownloadFileServing(t *testing.T) {
 	}
 }
 
+func TestUploadAndDownloadFileServingCompressedAndEncrypted(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create test storage directories
+	err := os.MkdirAll("bucket/testserve_com", 0755)
+	if err != nil {
+		t.Fatalf("failed to create test bucket dir: %v", err)
+	}
+	defer os.RemoveAll("bucket/testserve_com")
+
+	// Register origin
+	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false, ApiKey: "test-key"}
+	db.Create(&origin)
+
+	// Create path rule for secure-docs with compress and encrypt enabled
+	rule := ruleModel.Rule{
+		OriginID:      origin.ID,
+		Path:          "secure-docs",
+		IsCompress:    true,
+		CompressLevel: 5,
+		IsEncrypt:     true,
+		EncryptionKey: "test-encryption-key",
+	}
+	db.Create(&rule)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/file/", clientFileHandler)
+	handler := middleware.CORSAndOriginHandler(mux)
+
+	// 1. Upload File
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "secret.txt")
+	part.Write([]byte("Secret Data 123"))
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/file/secure-docs", body)
+	req.Header.Set("Origin", "http://testserve.com")
+	req.Header.Set("X-API-Key", "test-key")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("File upload failed: status=%d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	uploadedFilename := resp["filename"].(string)
+
+	// Check file on disk is NOT plain text "Secret Data 123"
+	filePath := filepath.Join("bucket/testserve_com/secure-docs", uploadedFilename)
+	diskBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("failed to read file from disk: %v", err)
+	}
+	if string(diskBytes) == "Secret Data 123" {
+		t.Errorf("Expected file on disk to be compressed/encrypted, but got raw string")
+	}
+
+	// 2. Download File
+	req = httptest.NewRequest(http.MethodGet, "/file/secure-docs/"+uploadedFilename, nil)
+	req.Header.Set("Origin", "http://testserve.com")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("File download failed: status=%d", w.Code)
+	}
+
+	if w.Body.String() != "Secret Data 123" {
+		t.Errorf("Content mismatch: expected 'Secret Data 123', got: %s", w.Body.String())
+	}
+}
+
 func TestGeneratePresignedURLRest(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -426,12 +503,12 @@ func TestGeneratePresignedURLRest(t *testing.T) {
 	db.Create(&origin)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/presigned-url", fileExplorer.GeneratePresignedURLRest)
+	mux.HandleFunc("/upload/prepare", upload.PrepareUploadHandler)
 	handler := middleware.CORSAndOriginHandler(mux)
 
 	// 1. Test JSON request body
 	jsonPayload := []byte(`{"path": "documents/nested"}`)
-	req := httptest.NewRequest(http.MethodPost, "/presigned-url", bytes.NewReader(jsonPayload))
+	req := httptest.NewRequest(http.MethodPost, "/upload/prepare", bytes.NewReader(jsonPayload))
 	req.Header.Set("Origin", "http://testserve.com")
 	req.Header.Set("X-API-Key", "test-key")
 	req.Header.Set("Content-Type", "application/json")
@@ -453,7 +530,7 @@ func TestGeneratePresignedURLRest(t *testing.T) {
 
 	// 2. Test urlencoded form body
 	formPayload := strings.NewReader("path=documents/form-nested")
-	req = httptest.NewRequest(http.MethodPost, "/presigned-url", formPayload)
+	req = httptest.NewRequest(http.MethodPost, "/upload/prepare", formPayload)
 	req.Header.Set("Origin", "http://testserve.com")
 	req.Header.Set("X-API-Key", "test-key")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -471,6 +548,44 @@ func TestGeneratePresignedURLRest(t *testing.T) {
 
 	if respForm["path"] != "documents/form-nested" {
 		t.Errorf("Expected path to be 'documents/form-nested', got %v", respForm["path"])
+	}
+}
+
+func TestPresignedExpiredTokenMultipartJSONResponse(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Register origin
+	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false, ApiKey: "test-key"}
+	db.Create(&origin)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/upload", upload.UploadHandler)
+	handler := middleware.CORSAndOriginHandler(mux)
+
+	// Hit /upload?token=expired-token with Content-Type multipart/form-data
+	req := httptest.NewRequest(http.MethodPost, "/upload?token=expired-token", nil)
+	req.Header.Set("Origin", "http://testserve.com")
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=something")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// It should return JSON error response rather than HTML page
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("Expected status %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "application/json") {
+		t.Errorf("Expected response content-type to contain application/json, but got: %s", contentType)
+	}
+
+	var response map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Expected valid JSON body, got error: %v", err)
+	}
+
+	if response["error"] == "" {
+		t.Errorf("Expected non-empty error message, got empty JSON object")
 	}
 }
 

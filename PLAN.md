@@ -65,7 +65,8 @@ lumbung-fs/
 │   ├── database/
 │   │   └── gorm.database.go                        # GORM database connection (Connect() function)
 │   ├── variables/
-│   │   └── path.variable.go                        # System-wide variables and path constants
+│   │   ├── path.variable.go                        # System-wide variables and path constants
+│   │   └── crypt.go                                # Cryptographic and compression utility helpers
 │   ├── middleware/
 │   │   ├── cors.middleware.go                      # Origin verification and CORS handling
 │   │   └── auth.middleware.go                      # Rule checks and authorization flow
@@ -83,9 +84,12 @@ lumbung-fs/
 │       │   │   └── rule_file.model.go              # Association model for rules (if needed)
 │       │   ├── rule.handle.go                      # Handlers for CRUD Rules & Rule checks
 │       │   └── rule.router.go                      # Routers for Rule module
-│       └── file-explorer/
-│           ├── file_explorer.handler.go            # File uploading, downloading, listing, and folder creation
-│           └── file-explorer.router.go             # Routers for browsing/uploading/downloading
+│       ├── file-explorer/
+│       │   ├── file_explorer.handler.go            # File uploading, downloading, listing, and folder creation
+│       │   └── file-explorer.router.go             # Routers for browsing/uploading/downloading
+│       └── upload/
+│           ├── upload.handler.go                   # Upload handler and uploader HTML page template
+│           └── upload.router.go                    # Routers for upload module (/upload, /upload/prepare)
 └── web/                                            # Frontend Vue 3 + Tailwind CSS source
 ```
 
@@ -127,6 +131,10 @@ We will use GORM to manage the following tables:
 - `value_unit_size` (string: KB, MB, GB)
 - `is_extensions` (boolean)
 - `value_extensions` (string, comma-separated, e.g., "png,jpg,jpeg")
+- `is_compress` (boolean)
+- `compress_level` (integer, default 3)
+- `is_encrypt` (boolean)
+- `encryption_key` (string, optional)
 
 ---
 
@@ -177,10 +185,24 @@ We will use GORM to manage the following tables:
   - Fully-functional **File Explorer** allowing users to create folders, upload files, browse structures, and download files.
 
 ### E. Presigned URL Upload Flow
-- **Token Generation**: Exposes `/api/explorer/presigned-url` for the dashboard and `/presigned-url` for external clients. Generates a temporary token valid for 1 minute stored in the `presigned_urls` table.
-- **Worker Clean-Up**: A background worker checks the database every 10 seconds and deletes expired tokens (older than 1 minute).
+- **Token Generation**: Exposes `/upload/prepare` for authenticated clients to prepare an upload with a specific target path. Generates a temporary token valid for 1 minute stored in the `presigned_urls` table.
 - **Unified Upload Handler (`/upload`)**:
   - `GET /upload?token=TOKEN`: Serves a self-contained, beautiful, responsive HTML uploader page using the Denim/Moss palette.
   - `POST /upload?token=TOKEN`: Performs a public multipart upload using the token.
   - `POST /upload`: Performs API Key authenticated backend uploads.
+  - Returns a premium, responsive HTML error page for invalid or expired tokens (unless the request accepts `application/json`, in which case it returns a JSON error response).
+
+### F. File Storage Compression & Encryption
+- Rules can have `compress file` (`is_compress`) and `encrypt file` (`is_encrypt`) flags enabled.
+- Compression uses Zstandard (zstd) compression via `github.com/klauspost/compress/zstd`. If enabled, a custom compression level from 1 to 22 (default 3) can be selected in the rule's `compress_level` field.
+- Encryption uses AES-256-GCM. The encryption/decryption key (32 bytes) is derived as follows:
+  1. Retrieve the system's hardware UUID/Machine ID via `"github.com/denisbrodbeck/machineid"`.
+  2. Retrieve the optional `encryption_key` set on the matched path rule.
+  3. Concatenate them as `"[machine_id]:[encryption_key]"`.
+  4. Generate a UUIDv5 of the concatenated string using `uuid.NewSHA1`.
+  5. Format the UUID as a hexadecimal string without dashes (exactly 32 characters/bytes) and use it as the AES key.
+- On client request/serving (via `/file/...` endpoint) or admin file download:
+  - If the matching path rule has compression or encryption enabled, the file content is decrypted and/or decompressed transparently.
+  - The MIME type is dynamically detected from the processed byte content using `http.DetectContentType` before serving.
+
 

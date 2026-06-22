@@ -66,6 +66,10 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		ValueUnitSize       string `json:"value_unit_size"`
 		IsExtensions        bool   `json:"is_extensions"`
 		ValueExtensions     string `json:"value_extensions"`
+		IsCompress          bool   `json:"is_compress"`
+		CompressLevel       int    `json:"compress_level"`
+		IsEncrypt           bool   `json:"is_encrypt"`
+		EncryptionKey       string `json:"encryption_key"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -91,6 +95,11 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		unitClean = "MB"
 	}
 
+	level := input.CompressLevel
+	if level == 0 {
+		level = 3
+	}
+
 	rule := ruleModel.Rule{
 		OriginID:            input.OriginID,
 		Path:                pathClean,
@@ -103,6 +112,10 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		ValueUnitSize:       unitClean,
 		IsExtensions:        input.IsExtensions,
 		ValueExtensions:     strings.TrimSpace(input.ValueExtensions),
+		IsCompress:          input.IsCompress,
+		CompressLevel:       level,
+		IsEncrypt:           input.IsEncrypt,
+		EncryptionKey:       strings.TrimSpace(input.EncryptionKey),
 	}
 
 	if err := database.DB.Create(&rule).Error; err != nil {
@@ -137,6 +150,10 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 		ValueUnitSize       string `json:"value_unit_size"`
 		IsExtensions        bool   `json:"is_extensions"`
 		ValueExtensions     string `json:"value_extensions"`
+		IsCompress          bool   `json:"is_compress"`
+		CompressLevel       int    `json:"compress_level"`
+		IsEncrypt           bool   `json:"is_encrypt"`
+		EncryptionKey       string `json:"encryption_key"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -168,6 +185,14 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 	}
 	rule.IsExtensions = input.IsExtensions
 	rule.ValueExtensions = strings.TrimSpace(input.ValueExtensions)
+	rule.IsCompress = input.IsCompress
+	level := input.CompressLevel
+	if level == 0 {
+		level = 3
+	}
+	rule.CompressLevel = level
+	rule.IsEncrypt = input.IsEncrypt
+	rule.EncryptionKey = strings.TrimSpace(input.EncryptionKey)
 
 	if err := database.DB.Save(&rule).Error; err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())

@@ -67,12 +67,6 @@ func ServerStart() {
 	// 7. Register Client File Serving Route
 	mux.HandleFunc("/file/", clientFileHandler)
 
-	// REST API upload endpoint (GET/POST unified)
-	mux.HandleFunc("/upload", fileExplorer.UploadHandler)
-
-	// REST API presigned URL endpoint
-	mux.HandleFunc("/presigned-url", fileExplorer.GeneratePresignedURLRest)
-
 	// 8. Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -252,7 +246,36 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 3. Serve File
-		http.ServeFile(w, r, targetPath)
+		var compress, encrypt bool
+		var compressLevel int
+		var encryptionKey string
+		if matchedRule, err := middleware.FindMatchingRule(origin.ID, subpath); err == nil && matchedRule != nil {
+			compress = matchedRule.IsCompress
+			compressLevel = matchedRule.CompressLevel
+			encrypt = matchedRule.IsEncrypt
+			encryptionKey = matchedRule.EncryptionKey
+		}
+
+		if compress || encrypt {
+			rawBytes, err := os.ReadFile(targetPath)
+			if err != nil {
+				http.Error(w, "File not found", http.StatusNotFound)
+				return
+			}
+
+			processedBytes, err := variables.ProcessDownloadData(rawBytes, compress, compressLevel, encrypt, encryptionKey)
+			if err != nil {
+				http.Error(w, "Decompression/Decryption failed: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			contentType := http.DetectContentType(processedBytes)
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(processedBytes)))
+			w.Write(processedBytes)
+		} else {
+			http.ServeFile(w, r, targetPath)
+		}
 
 	case http.MethodPost, http.MethodPut:
 		// Secure backend uploads by verifying the origin API key
@@ -312,15 +335,30 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 		uniqueName := id.String() + ext
 		targetFilePath := filepath.Join(targetDir, uniqueName)
 
-		out, err := os.Create(targetFilePath)
+		fileBytes, err := io.ReadAll(file)
 		if err != nil {
-			http.Error(w, "Internal server error: write failed", http.StatusInternalServerError)
+			http.Error(w, "Failed to read upload file", http.StatusInternalServerError)
 			return
 		}
-		defer out.Close()
 
-		if _, err := io.Copy(out, file); err != nil {
-			http.Error(w, "Internal server error: copy failed", http.StatusInternalServerError)
+		var compress, encrypt bool
+		var compressLevel int
+		var encryptionKey string
+		if matchedRule, err := middleware.FindMatchingRule(origin.ID, subpath); err == nil && matchedRule != nil {
+			compress = matchedRule.IsCompress
+			compressLevel = matchedRule.CompressLevel
+			encrypt = matchedRule.IsEncrypt
+			encryptionKey = matchedRule.EncryptionKey
+		}
+
+		processedBytes, err := variables.ProcessUploadData(fileBytes, compress, compressLevel, encrypt, encryptionKey)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if err := os.WriteFile(targetFilePath, processedBytes, 0644); err != nil {
+			http.Error(w, "Internal server error: write failed", http.StatusInternalServerError)
 			return
 		}
 

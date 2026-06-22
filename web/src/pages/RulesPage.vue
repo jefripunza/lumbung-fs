@@ -32,6 +32,10 @@ const form = ref({
   value_unit_size: 'MB',
   is_extensions: false,
   value_extensions: '',
+  is_compress: false,
+  compress_level: 3,
+  is_encrypt: false,
+  encryption_key: '',
   headers: [{ id: Math.random().toString(36).substring(2), value: '' }]
 })
 
@@ -48,6 +52,10 @@ function resetForm() {
     value_unit_size: 'MB',
     is_extensions: false,
     value_extensions: '',
+    is_compress: false,
+    compress_level: 3,
+    is_encrypt: false,
+    encryption_key: '',
     headers: [{ id: Math.random().toString(36).substring(2), value: '' }]
   }
 }
@@ -106,7 +114,11 @@ function cleanFormPayload() {
     value_max_size: form.value.value_max_size,
     value_unit_size: form.value.value_unit_size,
     is_extensions: form.value.is_extensions,
-    value_extensions: form.value.value_extensions.trim()
+    value_extensions: form.value.value_extensions.trim(),
+    is_compress: form.value.is_compress,
+    compress_level: form.value.compress_level,
+    is_encrypt: form.value.is_encrypt,
+    encryption_key: form.value.encryption_key.trim()
   }
 }
 
@@ -135,6 +147,10 @@ function openEdit(rule: Rule) {
     value_unit_size: rule.value_unit_size,
     is_extensions: rule.is_extensions,
     value_extensions: rule.value_extensions || '',
+    is_compress: rule.is_compress,
+    compress_level: rule.compress_level || 3,
+    is_encrypt: rule.is_encrypt,
+    encryption_key: rule.encryption_key || '',
     headers: hdrs
   }
   showEditModal.value = true
@@ -221,6 +237,14 @@ async function handleDelete() {
           <div v-if="rule.validate_url" class="rule-card__detail">
             <span class="rule-card__detail-label">Validate URL</span>
             <span class="rule-card__detail-value rule-card__detail-value--url">{{ rule.validate_url }}</span>
+          </div>
+          <div v-if="rule.is_compress" class="rule-card__detail">
+            <span class="rule-card__detail-label">Compress</span>
+            <span class="rule-card__detail-value">Level {{ rule.compress_level }}</span>
+          </div>
+          <div v-if="rule.is_encrypt" class="rule-card__detail">
+            <span class="rule-card__detail-label">Encrypt</span>
+            <span class="rule-card__detail-value">{{ rule.encryption_key ? 'Custom Key' : 'Default Key' }}</span>
           </div>
         </div>
 
@@ -317,6 +341,29 @@ async function handleDelete() {
             <span>Restrict extensions</span>
           </label>
           <input v-if="form.is_extensions" v-model="form.value_extensions" class="field__input" placeholder="jpg,png,pdf" />
+        </div>
+
+        <div class="field__row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+          <label class="field__checkbox">
+            <input type="checkbox" v-model="form.is_compress" />
+            <span>compress file</span>
+          </label>
+          <div v-if="form.is_compress" style="width: 100%; display: flex; align-items: center; gap: 8px; padding-left: 24px;">
+            <span class="field__label" style="font-size: 11px; margin-bottom: 0;">compress level</span>
+            <select v-model.number="form.compress_level" class="field__input field__input--small" style="width: 100px;">
+              <option v-for="level in 22" :key="level" :value="level">{{ level }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field__row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+          <label class="field__checkbox">
+            <input type="checkbox" v-model="form.is_encrypt" />
+            <span>encrypt file</span>
+          </label>
+          <div v-if="form.is_encrypt" style="width: 100%; padding-left: 24px;">
+            <input v-model="form.encryption_key" class="field__input" placeholder="encryption_key (optional)" />
+          </div>
         </div>
       </form>
       <template #footer>

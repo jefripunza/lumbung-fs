@@ -1,6 +1,7 @@
-revisi part 6 :
-- error masih, ketika saya akses misal: http://localhost:5173/file/019ef037-d866-7874-a12d-979211b8aa09.mp4, dari sisi folder sudah benar ada di ./localhost_5173/019ef037-d866-7874-a12d-979211b8aa09.mp4, tapi hasilnya malah seperti ini: Forbidden: Unknown origin domain;
-- 
+revisi part 8 :
+- di menu "Rules"
+  - di popup add dan edit rule
+    - encrypt: jika awal nya uncheck, lalu di check maka semua file di path itu di encrypt, namun jika dari check ke uncheck maka semua file di path itu di decrypt, (perlu sedikit waktu tergantung jumlah file). perhatikan backend jika file encrypt maka ketika ambil /file brarti di decrypt;
 
 revisi di PLAN.md dan revisi kode;
 

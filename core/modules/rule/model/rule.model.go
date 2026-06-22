@@ -19,6 +19,10 @@ type Rule struct {
 	ValueUnitSize       string `gorm:"type:varchar(10);not null;default:'MB';" json:"value_unit_size"` // KB, MB, GB
 	IsExtensions        bool   `gorm:"not null;default:false;" json:"is_extensions"`
 	ValueExtensions     string `gorm:"type:varchar(512);" json:"value_extensions"` // comma-separated, e.g. "png,jpg,jpeg"
+	IsCompress          bool   `gorm:"not null;default:false;" json:"is_compress"`
+	CompressLevel       int    `gorm:"not null;default:3;" json:"compress_level"`
+	IsEncrypt           bool   `gorm:"not null;default:false;" json:"is_encrypt"`
+	EncryptionKey       string `gorm:"type:varchar(255);" json:"encryption_key"`
 }
 
 // BeforeCreate hook to generate UUIDv7 before inserting
