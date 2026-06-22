@@ -1,10 +1,6 @@
-revisi part 4 :
-- di menu "Storage Explorer"
-  - tambahkan button "Generate Presigned URL" yang mana nanti dari backend membuatkan url dengan batas waktu 1 menit, setelah di klik langsung masuk clipboard, dan di paste ke browser langsung akses uploader yang disediakan ([GET]/upload?token=TOKEN), kalau method POST maka langsung multipart upload (origin mengikuti sekarang);
-  - button upload, pakai /api/explorer/upload, jangan pakai presigned url;
-  - setiap buat folder memang muncul di list tapi ketika di refresh hilang folder tersebut;
-- please ini critical, foldering masih salah, harusnya saat di menu "Storage Explorer" di New Folder, ketika create harusnya masuk ke ./bucket/sawang_tech/nama-folder-baru/bisa-recursive/UUIDv7.jpeg dan cara akses nya gini: https://sawang.tech/file/nama-folder-baru/bisa-recursive/UUIDv7.jpeg;
--
+revisi part 6 :
+- error masih, ketika saya akses misal: http://localhost:5173/file/019ef037-d866-7874-a12d-979211b8aa09.mp4, dari sisi folder sudah benar ada di ./localhost_5173/019ef037-d866-7874-a12d-979211b8aa09.mp4, tapi hasilnya malah seperti ini: Forbidden: Unknown origin domain;
+- 
 
 revisi di PLAN.md dan revisi kode;
 

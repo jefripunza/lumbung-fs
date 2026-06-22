@@ -152,8 +152,8 @@ We will use GORM to manage the following tables:
 
 ### C. CORS & Rules Middleware
 - **Domain Verification Middleware**:
-  - Validates if the request domain (`Origin` or `Host` header) is present in the `origin` database.
-  - If not found: insert into `unknown_origin` logs, then return CORS Error.
+  - Validates the request domain (resolved via `Origin`, `X-Forwarded-Host`, `X-Original-Host`, `Referer`, or `Host` headers) against the registered origins in the database.
+  - If not found: logs or updates the `unknown_origins` database logs, then returns a `Forbidden` error.
   - If found but `is_blocked == true`: block access immediately.
 - **Rule Verification Middleware**:
   - Analyzes the request path. If a rule exists for this path:
@@ -175,3 +175,12 @@ We will use GORM to manage the following tables:
   - Tables to view allowed Origins and logs of Unknown Origins.
   - Interface to configure custom path rules for each domain.
   - Fully-functional **File Explorer** allowing users to create folders, upload files, browse structures, and download files.
+
+### E. Presigned URL Upload Flow
+- **Token Generation**: Exposes `/api/explorer/presigned-url` for the dashboard and `/presigned-url` for external clients. Generates a temporary token valid for 1 minute stored in the `presigned_urls` table.
+- **Worker Clean-Up**: A background worker checks the database every 10 seconds and deletes expired tokens (older than 1 minute).
+- **Unified Upload Handler (`/upload`)**:
+  - `GET /upload?token=TOKEN`: Serves a self-contained, beautiful, responsive HTML uploader page using the Denim/Moss palette.
+  - `POST /upload?token=TOKEN`: Performs a public multipart upload using the token.
+  - `POST /upload`: Performs API Key authenticated backend uploads.
+

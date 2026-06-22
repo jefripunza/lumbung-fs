@@ -3,11 +3,14 @@ package origin
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"lumbung-fs/core/database"
 	originModel "lumbung-fs/core/modules/origin/model"
 	ruleModel "lumbung-fs/core/modules/rule/model"
+	"lumbung-fs/core/variables"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -122,6 +125,8 @@ func UpdateOrigin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	oldDomain := origin.Domain
+
 	// Update fields
 	if input.Domain != "" {
 		domainClean := strings.TrimSpace(strings.ToLower(input.Domain))
@@ -131,6 +136,20 @@ func UpdateOrigin(w http.ResponseWriter, r *http.Request) {
 		origin.Domain = domainClean
 	}
 	origin.IsBlocked = input.IsBlocked
+
+	// Perform folder rename if domain changed
+	if input.Domain != "" && origin.Domain != oldDomain {
+		oldFolder := filepath.Join(variables.BucketDir, variables.DomainToSnake(oldDomain))
+		newFolder := filepath.Join(variables.BucketDir, variables.DomainToSnake(origin.Domain))
+
+		// Check if old folder exists, then rename
+		if _, err := os.Stat(oldFolder); err == nil {
+			if err := os.Rename(oldFolder, newFolder); err != nil {
+				respondWithError(w, http.StatusInternalServerError, "Failed to rename storage folder: "+err.Error())
+				return
+			}
+		}
+	}
 
 	if err := database.DB.Save(&origin).Error; err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())

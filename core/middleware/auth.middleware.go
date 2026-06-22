@@ -157,6 +157,9 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 		if r.Method == http.MethodGet {
 			return true, "", http.StatusOK, nil
 		}
+		if r.URL.Query().Get("token") != "" {
+			return true, "", http.StatusOK, nil
+		}
 		return false, "", http.StatusForbidden, fmt.Errorf("upload not allowed: no matching path rule found")
 	}
 

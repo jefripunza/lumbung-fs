@@ -11,7 +11,7 @@ import (
 	originModel "lumbung-fs/core/modules/origin/model"
 )
 
-// ParseDomain strips protocol and port from raw origin/host strings
+// ParseDomain strips protocol and path, and port if it is 80 or 443
 func ParseDomain(raw string) string {
 	if raw == "" {
 		return ""
@@ -24,12 +24,57 @@ func ParseDomain(raw string) string {
 		raw = raw[7:]
 	}
 	
-	// Strip path or port
-	if idx := strings.IndexAny(raw, ":/"); idx != -1 {
+	// Strip path (if any)
+	if idx := strings.Index(raw, "/"); idx != -1 {
 		raw = raw[:idx]
 	}
 	
+	// Check for port
+	host, port, err := net.SplitHostPort(raw)
+	if err == nil {
+		if port != "80" && port != "443" && port != "" {
+			raw = host + ":" + port
+		} else {
+			raw = host
+		}
+	}
+	
 	return strings.ToLower(raw)
+}
+
+// ResolveDomain extracts the registered domain from Origin, X-Forwarded-Host, X-Original-Host, or Host headers
+func ResolveDomain(r *http.Request) string {
+	originHeader := r.Header.Get("Origin")
+	if originHeader != "" {
+		return ParseDomain(originHeader)
+	}
+
+	forwardedHost := r.Header.Get("X-Forwarded-Host")
+	if forwardedHost != "" {
+		if idx := strings.Index(forwardedHost, ","); idx != -1 {
+			forwardedHost = forwardedHost[:idx]
+		}
+		return ParseDomain(strings.TrimSpace(forwardedHost))
+	}
+
+	originalHost := r.Header.Get("X-Original-Host")
+	if originalHost != "" {
+		if idx := strings.Index(originalHost, ","); idx != -1 {
+			originalHost = originalHost[:idx]
+		}
+		return ParseDomain(strings.TrimSpace(originalHost))
+	}
+
+	referer := r.Header.Get("Referer")
+	if referer != "" {
+		return ParseDomain(referer)
+	}
+
+	hostHeader := r.Host
+	if hostHeader == "" {
+		hostHeader = r.Header.Get("Host")
+	}
+	return ParseDomain(hostHeader)
 }
 
 // GetClientIP retrieves the real client IP address
@@ -52,18 +97,7 @@ func GetClientIP(r *http.Request) string {
 func CORSAndOriginHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 1. Determine origin domain
-		originHeader := r.Header.Get("Origin")
-		hostHeader := r.Host
-		if hostHeader == "" {
-			hostHeader = r.Header.Get("Host")
-		}
-		
-		requestDomain := ""
-		if originHeader != "" {
-			requestDomain = ParseDomain(originHeader)
-		} else {
-			requestDomain = ParseDomain(hostHeader)
-		}
+		requestDomain := ResolveDomain(r)
 
 		if requestDomain == "" {
 			http.Error(w, "Forbidden: Missing origin or host header", http.StatusForbidden)
@@ -71,10 +105,11 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 		}
 
 		// Allow localhost or direct server address for admin dashboard access
-		// but enforce rules on custom domains. We also check if it's an API route.
+		// but enforce rules on custom domains. We also check if it's an API route or presigned upload.
 		isAPIRoute := strings.HasPrefix(r.URL.Path, "/api/")
-		if isAPIRoute {
-			// Apply standard open CORS for administrative dashboard APIs
+		isPresignedUpload := r.URL.Path == "/upload" && r.URL.Query().Get("token") != ""
+		if isAPIRoute || isPresignedUpload {
+			// Apply standard open CORS for administrative dashboard APIs and presigned uploads
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -93,16 +128,25 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 		result := database.DB.Where("domain = ?", requestDomain).First(&dbOrigin)
 		
 		if result.Error != nil {
-			// Domain not registered: Log to UnknownOrigin
+			// Domain not registered: Log or update UnknownOrigin
 			ip := GetClientIP(r)
 			log.Printf("Unknown origin request: domain=%s, ip=%s", requestDomain, ip)
 			
-			unknown := originModel.UnknownOrigin{
-				Domain:    requestDomain,
-				AccessAt:  time.Now(),
-				IPAddress: ip,
+			var existing originModel.UnknownOrigin
+			if err := database.DB.Where("domain = ?", requestDomain).First(&existing).Error; err == nil {
+				// Update existing entry
+				existing.AccessAt = time.Now()
+				existing.IPAddress = ip
+				database.DB.Save(&existing)
+			} else {
+				// Create new entry
+				unknown := originModel.UnknownOrigin{
+					Domain:    requestDomain,
+					AccessAt:  time.Now(),
+					IPAddress: ip,
+				}
+				database.DB.Create(&unknown)
 			}
-			database.DB.Create(&unknown)
 			
 			http.Error(w, "Forbidden: Unknown origin domain", http.StatusForbidden)
 			return
@@ -114,6 +158,7 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 		}
 
 		// 3. Set custom CORS for allowed origin
+		originHeader := r.Header.Get("Origin")
 		if originHeader != "" {
 			w.Header().Set("Access-Control-Allow-Origin", originHeader)
 		} else {

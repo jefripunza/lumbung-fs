@@ -3,6 +3,7 @@ package variables
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -30,3 +31,25 @@ func GetPasswordFilePath() string {
 func EnsureBucketDir() error {
 	return os.MkdirAll(BucketDir, 0755)
 }
+
+// DomainToSnake converts a domain (e.g. localhost:5173 or sawang.tech) to a snake_case folder name.
+// Any non-alphanumeric character is replaced by a single underscore, consolidating double underscores.
+func DomainToSnake(domain string) string {
+	var sb strings.Builder
+	lastWasUnderscore := false
+	for _, r := range domain {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+			lastWasUnderscore = false
+		} else {
+			if !lastWasUnderscore {
+				sb.WriteRune('_')
+				lastWasUnderscore = true
+			}
+		}
+	}
+	res := sb.String()
+	res = strings.Trim(res, "_")
+	return strings.ToLower(res)
+}
+

@@ -30,7 +30,10 @@ const selectedOrigin = computed(() => {
 const baseOriginPath = computed(() => {
   const origin = selectedOrigin.value
   if (!origin) return ''
-  return origin.domain.replaceAll('.', '_').replaceAll('-', '_')
+  return origin.domain
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
 })
 
 // When origin changes, reload files scoped to this origin's base path
@@ -132,14 +135,37 @@ async function handleUpload(e: Event) {
   const file = target.files?.[0]
   if (!file) return
   try {
-    // 1. Generate presigned URL
-    const presignedData = await store.generatePresignedUrl(selectedOriginId.value, store.currentPath)
-    // 2. Upload file via presigned URL
-    await store.uploadFileViaPresigned(presignedData.url, file, store.currentPath)
+    await store.uploadFile(store.currentPath, file)
   } catch (err) {
-    console.error('Presigned upload failed:', err)
+    console.error('Upload failed:', err)
   } finally {
     target.value = ''
+  }
+}
+
+const isGeneratingPresigned = ref(false)
+const presignedUrlCopied = ref(false)
+
+async function handleGeneratePresignedUrl() {
+  if (!selectedOriginId.value) return
+  isGeneratingPresigned.value = true
+  try {
+    const data = await store.generatePresignedUrl(selectedOriginId.value, store.currentPath)
+    if (data && data.url) {
+      let fullUrl = data.url
+      if (fullUrl.startsWith('/')) {
+        fullUrl = window.location.origin + fullUrl
+      }
+      await navigator.clipboard.writeText(fullUrl)
+      presignedUrlCopied.value = true
+      setTimeout(() => {
+        presignedUrlCopied.value = false
+      }, 2000)
+    }
+  } catch (err) {
+    console.error('Failed to generate presigned URL:', err)
+  } finally {
+    isGeneratingPresigned.value = false
   }
 }
 
@@ -261,6 +287,9 @@ const fileIcon = (item: FileItem) => {
         </div>
         <div class="explorer-page__actions">
           <OutlineButton @click="showNewFolderModal = true">📁 New Folder</OutlineButton>
+          <OutlineButton @click="handleGeneratePresignedUrl" :disabled="isGeneratingPresigned">
+            {{ presignedUrlCopied ? '📋 Copied!' : '🔗 Generate Presigned URL' }}
+          </OutlineButton>
           <MossButton @click="triggerUpload">↑ Upload</MossButton>
           <input ref="fileInputRef" type="file" class="explorer-page__file-input" @change="handleUpload" />
         </div>

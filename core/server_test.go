@@ -15,6 +15,7 @@ import (
 	"lumbung-fs/core/middleware"
 	"lumbung-fs/core/modules"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
+	fileExplorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
 	ruleModel "lumbung-fs/core/modules/rule/model"
 	"lumbung-fs/core/variables"
@@ -34,6 +35,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&originModel.Origin{},
 		&originModel.UnknownOrigin{},
 		&ruleModel.Rule{},
+		&fileExplorerModel.PresignedURL{},
 	)
 	if err != nil {
 		t.Fatalf("failed to migrate models: %v", err)
@@ -55,15 +57,76 @@ func TestParseDomain(t *testing.T) {
 		expected string
 	}{
 		{"http://example.com", "example.com"},
-		{"https://sub.domain.com:8080/path", "sub.domain.com"},
+		{"https://sub.domain.com:8080/path", "sub.domain.com:8080"},
 		{"domain.com", "domain.com"},
-		{"localhost:3000", "localhost"},
+		{"localhost:3000", "localhost:3000"},
 	}
 
 	for _, tc := range tests {
 		actual := middleware.ParseDomain(tc.input)
 		if actual != tc.expected {
 			t.Errorf("ParseDomain(%q) = %q; expected %q", tc.input, actual, tc.expected)
+		}
+	}
+}
+
+func TestResolveDomain(t *testing.T) {
+	// Test Origin header
+	req := httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
+	req.Header.Set("Origin", "http://origin-domain.com:8080")
+	req.Host = "host-domain.com:9090"
+	if actual := middleware.ResolveDomain(req); actual != "origin-domain.com:8080" {
+		t.Errorf("ResolveDomain failed for Origin header: expected 'origin-domain.com:8080', got '%s'", actual)
+	}
+
+	// Test X-Forwarded-Host header
+	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
+	req.Header.Set("X-Forwarded-Host", "forwarded-domain.com:7070, proxy-domain.com")
+	req.Host = "host-domain.com:9090"
+	if actual := middleware.ResolveDomain(req); actual != "forwarded-domain.com:7070" {
+		t.Errorf("ResolveDomain failed for X-Forwarded-Host header: expected 'forwarded-domain.com:7070', got '%s'", actual)
+	}
+
+	// Test X-Original-Host header
+	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
+	req.Header.Set("X-Original-Host", "original-domain.com:6060")
+	req.Host = "host-domain.com:9090"
+	if actual := middleware.ResolveDomain(req); actual != "original-domain.com:6060" {
+		t.Errorf("ResolveDomain failed for X-Original-Host header: expected 'original-domain.com:6060', got '%s'", actual)
+	}
+
+	// Test Referer header
+	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
+	req.Header.Set("Referer", "http://referer-domain.com:5050/some/path")
+	req.Host = "host-domain.com:9090"
+	if actual := middleware.ResolveDomain(req); actual != "referer-domain.com:5050" {
+		t.Errorf("ResolveDomain failed for Referer header: expected 'referer-domain.com:5050', got '%s'", actual)
+	}
+
+	// Test Host header fallback
+	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
+	req.Host = "host-domain.com:9090"
+	if actual := middleware.ResolveDomain(req); actual != "host-domain.com:9090" {
+		t.Errorf("ResolveDomain failed for Host header: expected 'host-domain.com:9090', got '%s'", actual)
+	}
+}
+
+
+func TestDomainToSnake(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"localhost:5173", "localhost_5173"},
+		{"foo...bar-baz", "foo_bar_baz"},
+		{"sawang.tech", "sawang_tech"},
+		{"--hello_world--", "hello_world"},
+	}
+
+	for _, tc := range tests {
+		actual := variables.DomainToSnake(tc.input)
+		if actual != tc.expected {
+			t.Errorf("DomainToSnake(%q) = %q; expected %q", tc.input, actual, tc.expected)
 		}
 	}
 }
@@ -304,7 +367,7 @@ func TestUploadAndDownloadFileServing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create test bucket dir: %v", err)
 	}
-	defer os.RemoveAll("bucket")
+	defer os.RemoveAll("bucket/testserve_com")
 
 	// Register origin
 	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false, ApiKey: "test-key"}
@@ -354,3 +417,60 @@ func TestUploadAndDownloadFileServing(t *testing.T) {
 		t.Errorf("Content mismatch: expected 'Hello LumbungFS', got: %s", w.Body.String())
 	}
 }
+
+func TestGeneratePresignedURLRest(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Register origin
+	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false, ApiKey: "test-key"}
+	db.Create(&origin)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/presigned-url", fileExplorer.GeneratePresignedURLRest)
+	handler := middleware.CORSAndOriginHandler(mux)
+
+	// 1. Test JSON request body
+	jsonPayload := []byte(`{"path": "documents/nested"}`)
+	req := httptest.NewRequest(http.MethodPost, "/presigned-url", bytes.NewReader(jsonPayload))
+	req.Header.Set("Origin", "http://testserve.com")
+	req.Header.Set("X-API-Key", "test-key")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Generate presigned url JSON failed: status=%d, body=%s", w.Code, w.Body.String())
+	}
+
+	var respJSON map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &respJSON); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+
+	if respJSON["path"] != "documents/nested" {
+		t.Errorf("Expected path to be 'documents/nested', got %v", respJSON["path"])
+	}
+
+	// 2. Test urlencoded form body
+	formPayload := strings.NewReader("path=documents/form-nested")
+	req = httptest.NewRequest(http.MethodPost, "/presigned-url", formPayload)
+	req.Header.Set("Origin", "http://testserve.com")
+	req.Header.Set("X-API-Key", "test-key")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Generate presigned url Form failed: status=%d, body=%s", w.Code, w.Body.String())
+	}
+
+	var respForm map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &respForm); err != nil {
+		t.Fatalf("failed to decode Form response: %v", err)
+	}
+
+	if respForm["path"] != "documents/form-nested" {
+		t.Errorf("Expected path to be 'documents/form-nested', got %v", respForm["path"])
+	}
+}
+
