@@ -2,11 +2,17 @@ package rule
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"lumbung-fs/core/database"
+	fileExplorer "lumbung-fs/core/modules/file-explorer"
+	originModel "lumbung-fs/core/modules/origin/model"
 	ruleModel "lumbung-fs/core/modules/rule/model"
+	"lumbung-fs/core/variables"
 )
 
 // Helper to write JSON responses
@@ -123,6 +129,13 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if rule.IsEncrypt {
+		if err := ProcessRuleEncryptionTransition(rule.OriginID, rule.Path, false, "", true, rule.EncryptionKey); err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Rule created but file encryption transition failed: "+err.Error())
+			return
+		}
+	}
+
 	respondWithJSON(w, http.StatusCreated, rule)
 }
 
@@ -167,6 +180,11 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Keep copy of old values for transition logic
+	oldPath := rule.Path
+	oldIsEncrypt := rule.IsEncrypt
+	oldKey := rule.EncryptionKey
+
 	// Update fields
 	if input.Path != "" {
 		pathClean := strings.TrimSpace(strings.Trim(input.Path, "/"))
@@ -193,6 +211,34 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 	rule.CompressLevel = level
 	rule.IsEncrypt = input.IsEncrypt
 	rule.EncryptionKey = strings.TrimSpace(input.EncryptionKey)
+
+	// Apply file transition
+	newPath := rule.Path
+	newIsEncrypt := rule.IsEncrypt
+	newKey := rule.EncryptionKey
+
+	if oldPath != newPath {
+		// Decrypt old path if it was encrypted
+		if oldIsEncrypt {
+			if err := ProcessRuleEncryptionTransition(rule.OriginID, oldPath, true, oldKey, false, ""); err != nil {
+				respondWithError(w, http.StatusInternalServerError, "Failed to decrypt old path: "+err.Error())
+				return
+			}
+		}
+		// Encrypt new path if it should be encrypted
+		if newIsEncrypt {
+			if err := ProcessRuleEncryptionTransition(rule.OriginID, newPath, false, "", true, newKey); err != nil {
+				respondWithError(w, http.StatusInternalServerError, "Failed to encrypt new path: "+err.Error())
+				return
+			}
+		}
+	} else {
+		// Same path, transition key or encryption state
+		if err := ProcessRuleEncryptionTransition(rule.OriginID, rule.Path, oldIsEncrypt, oldKey, newIsEncrypt, newKey); err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Failed to apply encryption transition: "+err.Error())
+			return
+		}
+	}
 
 	if err := database.DB.Save(&rule).Error; err != nil {
 		respondWithError(w, http.StatusInternalServerError, err.Error())
@@ -227,4 +273,96 @@ func DeleteRule(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Rule deleted successfully"})
+}
+
+// ProcessRuleEncryptionTransition handles transition of encryption (encrypting, decrypting or re-keying)
+// recursively for all files under the path specified by the rule.
+func ProcessRuleEncryptionTransition(originID string, path string, oldIsEncrypt bool, oldKey string, newIsEncrypt bool, newKey string) error {
+	var origin originModel.Origin
+	if err := database.DB.Where("id = ?", originID).First(&origin).Error; err != nil {
+		return err
+	}
+
+	originSnake := variables.DomainToSnake(origin.Domain)
+	targetDir, err := fileExplorer.SecurePath(filepath.Join(originSnake, path))
+	if err != nil {
+		return err
+	}
+
+	// Check if directory exists
+	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
+		return nil // No files to process
+	}
+
+	var action string // "encrypt", "decrypt", "rekey", "none"
+	if !oldIsEncrypt && newIsEncrypt {
+		action = "encrypt"
+	} else if oldIsEncrypt && !newIsEncrypt {
+		action = "decrypt"
+	} else if oldIsEncrypt && newIsEncrypt && oldKey != newKey {
+		action = "rekey"
+	} else {
+		return nil
+	}
+
+	var oldDerivedKey, newDerivedKey []byte
+	if action == "decrypt" || action == "rekey" {
+		oldDerivedKey, err = variables.DeriveKey(oldKey)
+		if err != nil {
+			return err
+		}
+	}
+	if action == "encrypt" || action == "rekey" {
+		newDerivedKey, err = variables.DeriveKey(newKey)
+		if err != nil {
+			return err
+		}
+	}
+
+	err = filepath.WalkDir(targetDir, func(filePath string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return err
+		}
+
+		var processed []byte
+		switch action {
+		case "encrypt":
+			processed, err = variables.EncryptAESGCM(data, newDerivedKey)
+			if err != nil {
+				return fmt.Errorf("failed to encrypt file %s: %w", filePath, err)
+			}
+		case "decrypt":
+			processed, err = variables.DecryptAESGCM(data, oldDerivedKey)
+			if err != nil {
+				return fmt.Errorf("failed to decrypt file %s: %w", filePath, err)
+			}
+		case "rekey":
+			// Decrypt with old key first
+			decrypted, err := variables.DecryptAESGCM(data, oldDerivedKey)
+			if err != nil {
+				return fmt.Errorf("failed to decrypt file %s during rekey: %w", filePath, err)
+			}
+			// Encrypt with new key
+			processed, err = variables.EncryptAESGCM(decrypted, newDerivedKey)
+			if err != nil {
+				return fmt.Errorf("failed to encrypt file %s during rekey: %w", filePath, err)
+			}
+		}
+
+		if err := os.WriteFile(filePath, processed, 0644); err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	return err
 }

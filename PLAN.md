@@ -204,5 +204,10 @@ We will use GORM to manage the following tables:
 - On client request/serving (via `/file/...` endpoint) or admin file download:
   - If the matching path rule has compression or encryption enabled, the file content is decrypted and/or decompressed transparently.
   - The MIME type is dynamically detected from the processed byte content using `http.DetectContentType` before serving.
+- On rule creation or update:
+  - If the rule's encryption state transitions from unchecked to checked (`is_encrypt` becomes true), all existing files under the rule's path are recursively encrypted on disk using the derived key.
+  - If it transitions from checked to unchecked (`is_encrypt` becomes false), all existing files under the rule's path are recursively decrypted back to their original unencrypted state.
+  - If the encryption key is modified while encryption remains enabled, all files under the path are decrypted with the old key and re-encrypted with the new key.
+  - If the path is renamed, files under the old path are decrypted (if it was encrypted) and files under the new path are encrypted (if the new rule specifies encryption).
 
 

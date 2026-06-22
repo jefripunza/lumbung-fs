@@ -18,6 +18,7 @@ import (
 	fileExplorerModel "lumbung-fs/core/modules/file-explorer/model"
 	originModel "lumbung-fs/core/modules/origin/model"
 	ruleModel "lumbung-fs/core/modules/rule/model"
+	"lumbung-fs/core/modules/rule"
 	"lumbung-fs/core/modules/upload"
 	"lumbung-fs/core/variables"
 
@@ -586,6 +587,130 @@ func TestPresignedExpiredTokenMultipartJSONResponse(t *testing.T) {
 
 	if response["error"] == "" {
 		t.Errorf("Expected non-empty error message, got empty JSON object")
+	}
+}
+
+func TestRuleEncryptionTransition(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create test storage directory
+	targetPath := "bucket/testserve_com/trans-docs"
+	err := os.MkdirAll(targetPath, 0755)
+	if err != nil {
+		t.Fatalf("failed to create test bucket dir: %v", err)
+	}
+	defer os.RemoveAll("bucket/testserve_com")
+
+	// Register origin
+	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false, ApiKey: "test-key"}
+	db.Create(&origin)
+
+	// Create path rule for trans-docs with encryption DISABLED initially
+	rRule := ruleModel.Rule{
+		OriginID:   origin.ID,
+		Path:       "trans-docs",
+		IsEncrypt:  false,
+	}
+	db.Create(&rRule)
+
+	// Create file1.txt and file2.txt containing raw contents
+	file1Path := filepath.Join(targetPath, "file1.txt")
+	file2Path := filepath.Join(targetPath, "file2.txt")
+	if err := os.WriteFile(file1Path, []byte("ContentA"), 0644); err != nil {
+		t.Fatalf("failed to write file1: %v", err)
+	}
+	if err := os.WriteFile(file2Path, []byte("ContentB"), 0644); err != nil {
+		t.Fatalf("failed to write file2: %v", err)
+	}
+
+	// 1. Verify files are currently unencrypted on disk
+	f1Data, _ := os.ReadFile(file1Path)
+	if string(f1Data) != "ContentA" {
+		t.Errorf("Expected raw content ContentA on disk, got: %s", string(f1Data))
+	}
+
+	// Setup mux & handlers to hit rule endpoints
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/rules", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			rule.CreateRule(w, r)
+		} else if r.Method == http.MethodPut {
+			rule.UpdateRule(w, r)
+		}
+	})
+	mux.HandleFunc("/file/", clientFileHandler)
+	handler := middleware.CORSAndOriginHandler(mux)
+
+	// 2. Perform rule update: transition from IsEncrypt=false to IsEncrypt=true
+	payloadJSON := []byte(`{
+		"path": "trans-docs",
+		"is_encrypt": true,
+		"encryption_key": "secret-key-1"
+	}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/rules?id="+rRule.ID, bytes.NewReader(payloadJSON))
+	req.Header.Set("Origin", "http://testserve.com")
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Failed to update rule: %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// 3. Verify files on disk are now ENCRYPTED (should not match plain text)
+	f1Enc, err := os.ReadFile(file1Path)
+	if err != nil {
+		t.Fatalf("failed to read file1: %v", err)
+	}
+	if string(f1Enc) == "ContentA" {
+		t.Errorf("Expected file1 on disk to be encrypted, but got raw content")
+	}
+
+	f2Enc, err := os.ReadFile(file2Path)
+	if err != nil {
+		t.Fatalf("failed to read file2: %v", err)
+	}
+	if string(f2Enc) == "ContentB" {
+		t.Errorf("Expected file2 on disk to be encrypted, but got raw content")
+	}
+
+	// 4. Verify downloading/serving via clientFileHandler yields DECRYPTED files
+	reqDownload := httptest.NewRequest(http.MethodGet, "/file/trans-docs/file1.txt", nil)
+	reqDownload.Header.Set("Origin", "http://testserve.com")
+	wDownload := httptest.NewRecorder()
+	handler.ServeHTTP(wDownload, reqDownload)
+
+	if wDownload.Code != http.StatusOK {
+		t.Fatalf("Failed to download file1: %d", wDownload.Code)
+	}
+	if wDownload.Body.String() != "ContentA" {
+		t.Errorf("Expected decrypted download content 'ContentA', got: '%s'", wDownload.Body.String())
+	}
+
+	// 5. Perform rule update: transition from IsEncrypt=true to IsEncrypt=false
+	payloadJSONDec := []byte(`{
+		"path": "trans-docs",
+		"is_encrypt": false,
+		"encryption_key": ""
+	}`)
+	reqDec := httptest.NewRequest(http.MethodPut, "/api/rules?id="+rRule.ID, bytes.NewReader(payloadJSONDec))
+	reqDec.Header.Set("Origin", "http://testserve.com")
+	reqDec.Header.Set("Content-Type", "application/json")
+	wDec := httptest.NewRecorder()
+	handler.ServeHTTP(wDec, reqDec)
+
+	if wDec.Code != http.StatusOK {
+		t.Fatalf("Failed to update rule back to unencrypted: %d, body: %s", wDec.Code, wDec.Body.String())
+	}
+
+	// 6. Verify files on disk are decrypted back to plain text
+	f1Dec, _ := os.ReadFile(file1Path)
+	if string(f1Dec) != "ContentA" {
+		t.Errorf("Expected file1 on disk to be decrypted back to plain text, got: %s", string(f1Dec))
+	}
+	f2Dec, _ := os.ReadFile(file2Path)
+	if string(f2Dec) != "ContentB" {
+		t.Errorf("Expected file2 on disk to be decrypted back to plain text, got: %s", string(f2Dec))
 	}
 }
 
