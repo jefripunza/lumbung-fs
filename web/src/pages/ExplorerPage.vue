@@ -71,10 +71,64 @@ function navigateUp() {
   store.listItems(parts.join('/'))
 }
 
+const showImagePreviewModal = ref(false)
+const previewImageUrl = ref('')
+const isPreviewLoading = ref(false)
+const zoomScale = ref(1)
+const previewImageName = ref('')
+
+function isImage(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || ''
+  return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)
+}
+
 function openItem(item: FileItem) {
   if (item.is_dir) {
     store.listItems(item.path)
+  } else if (isImage(item.name)) {
+    openImagePreview(item)
   }
+}
+
+async function openImagePreview(item: FileItem) {
+  isPreviewLoading.value = true
+  zoomScale.value = 1
+  previewImageUrl.value = ''
+  previewImageName.value = item.name
+  showImagePreviewModal.value = true
+
+  try {
+    const token = localStorage.getItem('lumbungfs_token')
+    const url = `/api/explorer/download?path=${encodeURIComponent(item.path)}`
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) throw new Error('Failed to load image')
+    const blob = await res.blob()
+    previewImageUrl.value = URL.createObjectURL(blob)
+  } catch (err) {
+    console.error('Error loading preview image:', err)
+  } finally {
+    isPreviewLoading.value = false
+  }
+}
+
+function closeImagePreview() {
+  showImagePreviewModal.value = false
+  if (previewImageUrl.value) {
+    URL.revokeObjectURL(previewImageUrl.value)
+    previewImageUrl.value = ''
+  }
+}
+
+function zoomIn() {
+  zoomScale.value = Math.min(3, zoomScale.value + 0.2)
+}
+
+function zoomOut() {
+  zoomScale.value = Math.max(0.2, zoomScale.value - 0.2)
+}
+
+function resetZoom() {
+  zoomScale.value = 1
 }
 
 async function handleCreateFolder() {
@@ -280,6 +334,38 @@ const fileIcon = (item: FileItem) => {
       <template #footer>
         <OutlineButton @click="showDeleteConfirm = false">Cancel</OutlineButton>
         <OutlineButton variant="danger" @click="handleDelete">Delete</OutlineButton>
+      </template>
+    </ModalDialog>
+
+    <!-- Image Preview Modal -->
+    <ModalDialog
+      v-if="showImagePreviewModal"
+      :title="previewImageName"
+      max-width="800px"
+      @close="closeImagePreview"
+    >
+      <div v-if="isPreviewLoading" class="image-preview-loading">
+        <span class="explorer-page__spinner"></span>
+        Loading preview…
+      </div>
+      <div v-else class="image-preview-modal-body">
+        <div class="image-preview-container">
+          <img
+            :src="previewImageUrl"
+            :style="{ transform: `scale(${zoomScale})` }"
+            class="preview-img"
+            alt="Preview"
+          />
+        </div>
+        <div class="image-preview-controls">
+          <button type="button" class="control-btn" @click="zoomOut" title="Zoom Out">Zoom Out (-)</button>
+          <span class="control-zoom-pct">{{ Math.round(zoomScale * 100) }}%</span>
+          <button type="button" class="control-btn" @click="zoomIn" title="Zoom In">Zoom In (+)</button>
+          <button type="button" class="control-btn control-btn--secondary" @click="resetZoom">Reset</button>
+        </div>
+      </div>
+      <template #footer>
+        <OutlineButton @click="closeImagePreview">Close</OutlineButton>
       </template>
     </ModalDialog>
   </div>
@@ -616,5 +702,77 @@ const fileIcon = (item: FileItem) => {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.image-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-12);
+  font-family: var(--font-muoto);
+  font-size: 14px;
+  color: var(--color-slate-smoke);
+  padding: var(--spacing-48) 0;
+}
+.image-preview-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-16);
+}
+.image-preview-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  max-height: 55vh;
+  min-height: 320px;
+  background: var(--color-sage-paper);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-16);
+  border: 0.5px solid var(--color-lichen);
+}
+.preview-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: transform 0.15s ease-out;
+}
+.image-preview-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-12);
+}
+.control-btn {
+  background: var(--color-bone-white);
+  border: 0.5px solid var(--color-lichen);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  font-family: var(--font-denim);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-forest-ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.control-btn:hover {
+  background: var(--color-lichen);
+  color: var(--color-bone-white);
+}
+.control-btn--secondary {
+  border-color: transparent;
+  background: none;
+}
+.control-btn--secondary:hover {
+  background: rgba(133, 192, 147, 0.1);
+  color: var(--color-forest-ink);
+}
+.control-zoom-pct {
+  font-family: var(--font-muoto);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-forest-ink);
+  min-width: 48px;
+  text-align: center;
 }
 </style>

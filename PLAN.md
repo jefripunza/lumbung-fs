@@ -104,6 +104,7 @@ We will use GORM to manage the following tables:
 - `id` (UUIDv7, Primary Key)
 - `domain` (string, Unique)
 - `is_blocked` (boolean)
+- `api_key` (string, API Key for backend upload authentication)
 
 #### **Unknown Origin Table** (Logged traffic for unregistered domains)
 
@@ -158,6 +159,13 @@ We will use GORM to manage the following tables:
   - Analyzes the request path. If a rule exists for this path:
     - Perform request content size checks and file extension verification.
     - If `validate_method` is set, verify via `validate_url`.
+  - For uploads (POST/PUT), if no matching path rule is found, the upload is blocked by default (`403 Forbidden`).
+- **REST API Upload**:
+  - Exposes `POST /upload` endpoint for backend clients.
+  - Authenticated via the origin's generated API Key (`X-API-Key` or `Authorization: Bearer <key>`).
+  - Validates matching Host or Origin headers and enforces matching path rules.
+- **Cascade Deletion**:
+  - When deleting an origin, a GORM database transaction explicitly cascade deletes all associated rules.
 
 ### D. Frontend Management Dashboard
 - Built with **Vue 3** + **Tailwind CSS**.

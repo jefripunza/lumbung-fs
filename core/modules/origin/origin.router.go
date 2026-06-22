@@ -39,4 +39,12 @@ func RegisterRoutes(mux *http.ServeMux) {
 			respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		}
 	})
+
+	mux.HandleFunc("/api/origins/apikey", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			GenerateApiKey(w, r)
+		} else {
+			respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+	})
 }

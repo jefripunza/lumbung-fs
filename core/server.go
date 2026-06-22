@@ -62,6 +62,9 @@ func ServerStart() {
 	// 7. Register Client File Serving Route
 	mux.HandleFunc("/file/", clientFileHandler)
 
+	// REST API upload endpoint
+	mux.HandleFunc("/upload", restUploadHandler)
+
 	// 8. Health check
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -251,6 +254,12 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, targetPath)
 
 	case http.MethodPost, http.MethodPut:
+		// Secure backend uploads by verifying the origin API key
+		if !checkApiKey(r, origin.ApiKey) {
+			http.Error(w, "Unauthorized: Invalid or missing API key", http.StatusUnauthorized)
+			return
+		}
+
 		// Handle direct file uploads from custom clients/domains
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
@@ -316,11 +325,20 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 
 		bucketAbs, _ := filepath.Abs(variables.BucketDir)
 		relPath, _ := filepath.Rel(bucketAbs, targetFilePath)
+
+		var fileURL string
+		subpathClean := strings.Trim(subpath, "/")
+		if subpathClean != "" {
+			fileURL = fmt.Sprintf("/file/%s/%s", subpathClean, uniqueName)
+		} else {
+			fileURL = fmt.Sprintf("/file/%s", uniqueName)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"message":  "File uploaded successfully",
-			"url":      fmt.Sprintf("/file/%s/%s", strings.Trim(subpath, "/"), uniqueName),
+			"url":      fileURL,
 			"filename": uniqueName,
 			"path":     relPath,
 			"size":     header.Size,
@@ -329,4 +347,148 @@ func clientFileHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// checkApiKey validates that the request has an API Key matching the origin's ApiKey
+func checkApiKey(r *http.Request, originApiKey string) bool {
+	if originApiKey == "" {
+		return false
+	}
+
+	// Check X-API-Key header
+	apiKey := r.Header.Get("X-API-Key")
+	if apiKey == "" {
+		// Check Authorization header (Bearer <apiKey>)
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				apiKey = parts[1]
+			}
+		}
+	}
+
+	return apiKey == originApiKey
+}
+
+// restUploadHandler processes REST API file uploads at POST /upload
+func restUploadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Resolve origin domain from request
+	originHeader := r.Header.Get("Origin")
+	hostHeader := r.Host
+	if hostHeader == "" {
+		hostHeader = r.Header.Get("Host")
+	}
+
+	requestDomain := ""
+	if originHeader != "" {
+		requestDomain = middleware.ParseDomain(originHeader)
+	} else {
+		requestDomain = middleware.ParseDomain(hostHeader)
+	}
+
+	// Find origin record in DB
+	var origin originModel.Origin
+	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
+		http.Error(w, "Forbidden: Invalid origin", http.StatusForbidden)
+		return
+	}
+
+	// Verify API key
+	if !checkApiKey(r, origin.ApiKey) {
+		http.Error(w, "Unauthorized: Invalid or missing API key", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse multipart form
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "File parameter is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Extract target path (directory under origin) from multipart form value
+	subpath := strings.Trim(r.FormValue("path"), "/")
+
+	ext := filepath.Ext(header.Filename)
+
+	// Evaluate path rules (POST mode - requires rule to exist)
+	allowed, fallbackURL, status, err := middleware.EvaluatePathRules(r, origin.ID, subpath, header.Size, ext)
+	if !allowed {
+		if fallbackURL != "" {
+			http.Redirect(w, r, fallbackURL, http.StatusFound)
+			return
+		}
+		errMsg := "Upload blocked by path rules"
+		if err != nil {
+			errMsg = fmt.Sprintf("Upload blocked: %v", err)
+		}
+		http.Error(w, errMsg, status)
+		return
+	}
+
+	originSnake := strings.ReplaceAll(strings.ReplaceAll(origin.Domain, ".", "_"), "-", "_")
+	targetDir, err := fileExplorer.SecurePath(filepath.Join(originSnake, subpath))
+	if err != nil {
+		http.Error(w, "Bad request: invalid path", http.StatusBadRequest)
+		return
+	}
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		http.Error(w, "Internal server error: ID generation failed", http.StatusInternalServerError)
+		return
+	}
+
+	uniqueName := id.String() + ext
+	targetFilePath := filepath.Join(targetDir, uniqueName)
+
+	out, err := os.Create(targetFilePath)
+	if err != nil {
+		http.Error(w, "Internal server error: write failed", http.StatusInternalServerError)
+		return
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, file); err != nil {
+		http.Error(w, "Internal server error: copy failed", http.StatusInternalServerError)
+		return
+	}
+
+	bucketAbs, _ := filepath.Abs(variables.BucketDir)
+	relPath, _ := filepath.Rel(bucketAbs, targetFilePath)
+
+	var fileURL string
+	subpathClean := strings.Trim(subpath, "/")
+	if subpathClean != "" {
+		fileURL = fmt.Sprintf("https://%s/file/%s/%s", origin.Domain, subpathClean, uniqueName)
+	} else {
+		fileURL = fmt.Sprintf("https://%s/file/%s", origin.Domain, uniqueName)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":  "File uploaded successfully",
+		"url":      fileURL,
+		"filename": uniqueName,
+		"path":     relPath,
+		"size":     header.Size,
+	})
 }

@@ -7,7 +7,9 @@ import (
 
 	"lumbung-fs/core/database"
 	originModel "lumbung-fs/core/modules/origin/model"
-	
+	ruleModel "lumbung-fs/core/modules/rule/model"
+
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -149,12 +151,58 @@ func DeleteOrigin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DB.Delete(&origin).Error; err != nil {
+	tx := database.DB.Begin()
+	// Explicitly delete rules associated with this origin_id to ensure cascade delete
+	if err := tx.Where("origin_id = ?", id).Delete(&ruleModel.Rule{}).Error; err != nil {
+		tx.Rollback()
 		respondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	if err := tx.Delete(&origin).Error; err != nil {
+		tx.Rollback()
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	tx.Commit()
+
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Origin deleted successfully"})
+}
+
+// GenerateApiKey handles POST /api/origins/apikey
+func GenerateApiKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondWithError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, "ID parameter is required")
+		return
+	}
+
+	var origin originModel.Origin
+	if err := database.DB.Where("id = ?", id).First(&origin).Error; err != nil {
+		respondWithError(w, http.StatusNotFound, "Origin not found")
+		return
+	}
+
+	keyUUID, err := uuid.NewV7()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to generate API key")
+		return
+	}
+	// Format: lf_<uuid_without_dashes>
+	apiKey := "lf_" + strings.ReplaceAll(keyUUID.String(), "-", "")
+
+	origin.ApiKey = apiKey
+	if err := database.DB.Save(&origin).Error; err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, origin)
 }
 
 // ListUnknownOrigins handles GET /api/unknown-origins

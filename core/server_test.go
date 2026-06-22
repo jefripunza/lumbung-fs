@@ -307,8 +307,12 @@ func TestUploadAndDownloadFileServing(t *testing.T) {
 	defer os.RemoveAll("bucket")
 
 	// Register origin
-	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false}
+	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false, ApiKey: "test-key"}
 	db.Create(&origin)
+
+	// Create path rule for documents (required for upload)
+	rule := ruleModel.Rule{OriginID: origin.ID, Path: "documents"}
+	db.Create(&rule)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/file/", clientFileHandler)
@@ -323,6 +327,7 @@ func TestUploadAndDownloadFileServing(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/file/documents", body)
 	req.Header.Set("Origin", "http://testserve.com")
+	req.Header.Set("X-API-Key", "test-key")
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

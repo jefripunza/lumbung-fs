@@ -152,9 +152,12 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 		}
 	}
 
-	// If no rules matched the path, allow request
+	// If no rules matched the path, allow request for GET, but deny for uploads (POST/PUT)
 	if matchedRule == nil {
-		return true, "", http.StatusOK, nil
+		if r.Method == http.MethodGet {
+			return true, "", http.StatusOK, nil
+		}
+		return false, "", http.StatusForbidden, fmt.Errorf("upload not allowed: no matching path rule found")
 	}
 
 	// 1. File Size Verification

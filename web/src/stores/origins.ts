@@ -6,6 +6,7 @@ export interface Origin {
   id: string
   domain: string
   is_blocked: boolean
+  api_key?: string
 }
 
 export interface UnknownOrigin {
@@ -48,6 +49,13 @@ export const useOriginsStore = defineStore('origins', () => {
     origins.value = origins.value.filter((o) => o.id !== id)
   }
 
+  async function generateApiKey(id: string) {
+    const { data } = await api.post(`/origins/apikey?id=${id}`)
+    const idx = origins.value.findIndex((o) => o.id === id)
+    if (idx !== -1) origins.value[idx] = data
+    return data
+  }
+
   async function fetchUnknownOrigins() {
     isLoading.value = true
     try {
@@ -87,5 +95,6 @@ export const useOriginsStore = defineStore('origins', () => {
     deleteUnknownOrigin,
     clearAllUnknownOrigins,
     promoteUnknownOrigin,
+    generateApiKey,
   }
 })

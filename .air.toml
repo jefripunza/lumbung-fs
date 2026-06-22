@@ -19,6 +19,7 @@ exclude_dir = [
     "playwright-report",
     "tests",
     "erd.*",
+    "bucket",
     "web",
 ]
 exclude_regex = ["_test\\.go"]

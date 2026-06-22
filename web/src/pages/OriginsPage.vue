@@ -73,6 +73,27 @@ async function handleDelete() {
 async function handleToggleBlock(origin: Origin) {
   await store.updateOrigin(origin.id, origin.domain, !origin.is_blocked)
 }
+
+const copiedId = ref<string | null>(null)
+
+async function handleGenerateKey(id: string) {
+  await store.generateApiKey(id)
+}
+
+async function handleCopyKey(origin: Origin) {
+  if (!origin.api_key) return
+  try {
+    await navigator.clipboard.writeText(origin.api_key)
+    copiedId.value = origin.id
+    setTimeout(() => {
+      if (copiedId.value === origin.id) {
+        copiedId.value = null
+      }
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy API key', err)
+  }
+}
 </script>
 
 <template>
@@ -111,6 +132,36 @@ async function handleToggleBlock(origin: Origin) {
         </div>
         <h3 class="origin-card__domain">{{ origin.domain }}</h3>
         <p class="origin-card__id">{{ origin.id }}</p>
+
+        <!-- API Key Box -->
+        <div class="origin-card__api-key-box">
+          <span class="field__label" style="font-size: 10px; margin-bottom: 4px; display: block;">API Key</span>
+          <div class="origin-card__api-key-container">
+            <code class="origin-card__api-key-value">
+              {{ origin.api_key || '— no api key generated —' }}
+            </code>
+            <div class="origin-card__api-key-actions">
+              <button
+                v-if="origin.api_key"
+                type="button"
+                class="key-action-btn"
+                @click="handleCopyKey(origin)"
+                title="Copy API Key"
+              >
+                {{ copiedId === origin.id ? 'Copied!' : 'Copy' }}
+              </button>
+              <button
+                type="button"
+                class="key-action-btn"
+                @click="handleGenerateKey(origin.id)"
+                :title="origin.api_key ? 'Regenerate API Key' : 'Generate API Key'"
+              >
+                {{ origin.api_key ? 'Regen' : 'Generate' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div class="origin-card__actions">
           <OutlineButton @click="openEdit(origin)">Edit</OutlineButton>
           <OutlineButton @click="handleToggleBlock(origin)">
@@ -319,5 +370,49 @@ async function handleToggleBlock(origin: Origin) {
   font-size: 14px;
   color: var(--color-forest-ink);
   cursor: pointer;
+}
+
+.origin-card__api-key-box {
+  margin-top: 4px;
+  background: var(--color-sage-paper);
+  border: 0.5px solid var(--color-lichen);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-12);
+}
+.origin-card__api-key-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+}
+.origin-card__api-key-value {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--color-forest-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: left;
+}
+.origin-card__api-key-actions {
+  display: flex;
+  gap: 4px;
+}
+.key-action-btn {
+  background: var(--color-bone-white);
+  border: 0.5px solid var(--color-lichen);
+  border-radius: var(--radius-md);
+  padding: 4px 8px;
+  font-family: var(--font-denim);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-forest-ink);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.key-action-btn:hover {
+  background: var(--color-lichen);
+  color: var(--color-bone-white);
 }
 </style>

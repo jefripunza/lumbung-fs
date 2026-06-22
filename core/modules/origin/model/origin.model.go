@@ -10,6 +10,7 @@ type Origin struct {
 	ID        string `gorm:"type:varchar(36);primaryKey;" json:"id"`
 	Domain    string `gorm:"type:varchar(255);uniqueIndex;not null;" json:"domain"`
 	IsBlocked bool   `gorm:"not null;default:false;" json:"is_blocked"`
+	ApiKey    string `gorm:"type:varchar(255);" json:"api_key"`
 }
 
 // BeforeCreate hook to generate UUIDv7 before inserting

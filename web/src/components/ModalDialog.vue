@@ -19,7 +19,7 @@ onMounted(() => {
 <template>
   <Teleport to="body">
     <Transition name="modal" appear>
-      <div v-if="isVisible" class="modal-overlay" @click.self="$emit('close')">
+      <div v-if="isVisible" class="modal-overlay">
         <div class="modal-dialog" :style="maxWidth ? `max-width: ${maxWidth}` : undefined">
           <div v-if="title" class="modal-header">
             <h3 class="modal-title">{{ title }}</h3>
