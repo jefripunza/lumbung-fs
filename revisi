@@ -1,28 +1,12 @@
-yang masih belum sesuai:
-  - Origin
-    - button edit
-      - popup edit, Block this origin hapus saja
-    - button delete
-      - tambahkan popup dialog, jangan pakai alert
-    - button add origin / button edit
-      - jika input origin, jika ada http:// atau https:// maka hapus, tidak perlu input, pastikan validasi di backend benar
-  - Rules
-    - button add rule / edit rule
-      - di path, jangan lagi isi "/file", di sebelah kiri field nya ada tulisan "/file" dan di field nya cuman menambahkan sisa path nya nanti di jadikan 1 pas di backend (yang di simpan hanya path di field saja tanpa prefix "/file", karena itu nggak perlu)
-      - di VALIDATE METHOD, kan sudah jelas di PLAN.md, ini sebenernya adalah dropdown (JWT, headers, cache). jika JWT dan cache maka tidak perlu muncul apapun, jika headers maka muncul card dengan button "add header" maka muncul field yaitu "key" dan boleh lebih dari 1 headers.
-      - di field belum ada field untuk validate_url (yaitu target untuk validasi, ini butuh service / backend lain untuk validasi)
-    - button delete
-      - tambahkan popup dialog, jangan pakai alert
-  - Storage Explorer
-    - saat masuk ke halaman menu ini, harusnya pertama kali di suruh untuk pilih origin, baru muncul semua folder dan file
-    - delete folder dan file masih belum work
+revisi part 2 :
+- semua popup tidak boleh keluar / close jika di klik di luar popup (outside click)
+- jika origin di hapus, maka cascade berlaku di table2 yang terikat dengan origin itu
+- foldering masih salah, harusnya saat di menu "Storage Explorer" di New Folder, ketika create harusnya masuk ke ./bucket/sawang_tech/nama-folder-baru/bisa-recursive/UUIDv7.jpeg dan cara akses nya gini: https://sawang.tech/file/nama-folder-baru/bisa-recursive/UUIDv7.jpeg
+- di menu "Storage Explorer", ketika di list file nya adalah sebuah image maka bisa di klik akan muncul popup modal menampilkan foto dan bisa di zoom
+- yang diperbolehkan upload hanya yang ada di Rules, jika tidak ada di Rules tidak diperbolehkan upload
+- di Origin, tambahkan button di dalam list data yaitu untuk generate apikey, gunanya untuk akses upload dari backend perlu di amankan
+- dari sisi backend lain cara upload nya ada 2 cara, yaitu menggunakan RestAPI di endpoint [POST] /upload, pastikan saat hit menggunakan header origin yang benar
 
 revisi di PLAN.md dan revisi kode;
 
 fix, focus, revisi, no mistake;
-
-
-part 2
-- semua popup tidak boleh keluar / close jika di klik di luar popup (outside click)
-- jika origin di hapus, maka cascade berlaku di table2 yang terikat dengan origin itu
-- 
