@@ -19,7 +19,7 @@ RUN bun install
 # build
 COPY ./web/* .
 ENV VITE_IS_DOCKER=true
-RUN bun run build
+RUN bun run build-only
 
 # =======================================================================================
 # Build Backend
