@@ -463,13 +463,22 @@ func ResolveOriginFromSubpath(subpath string) (*originModel.Origin, string) {
 	evalPath := strings.Join(parts[1:], "/")
 
 	var origins []originModel.Origin
-	if err := database.DB.Find(&origins).Error; err != nil {
-		return nil, ""
+	if err := database.DB.Find(&origins).Error; err == nil {
+		for _, o := range origins {
+			if variables.DomainToSnake(o.Domain) == originSnake {
+				return &o, evalPath
+			}
+		}
 	}
 
-	for _, o := range origins {
-		if variables.DomainToSnake(o.Domain) == originSnake {
-			return &o, evalPath
+	// Fallback to checking WEB_DASHBOARD_ORIGIN env
+	dashboardOrigin := os.Getenv("WEB_DASHBOARD_ORIGIN")
+	if dashboardOrigin != "" {
+		parsed := middlewares.ParseDomain(dashboardOrigin)
+		if variables.DomainToSnake(parsed) == originSnake {
+			return &originModel.Origin{
+				Domain: parsed,
+			}, evalPath
 		}
 	}
 

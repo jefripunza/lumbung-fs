@@ -17,7 +17,7 @@ COPY ./web/package.json ./
 RUN bun install
 
 # build
-COPY ./web/* .
+COPY ./web/ .
 ENV VITE_IS_DOCKER=true
 RUN bun run build-only
 

@@ -832,3 +832,81 @@ func TestEnvCredentialsLogin(t *testing.T) {
 	}
 }
 
+func TestDualOriginValidation(t *testing.T) {
+	setupTestDB(t)
+
+	// Save original env
+	origEnv := os.Getenv("WEB_DASHBOARD_ORIGIN")
+	defer os.Setenv("WEB_DASHBOARD_ORIGIN", origEnv)
+
+	// Setup a mock server/handler
+	mux := http.NewServeMux()
+	mux.HandleFunc("/file/", file.ClientFileHandler)
+	handler := middlewares.CORSAndOriginHandler(mux)
+
+	// Prepare bucket folder structure
+	// We want to test reading a file for the dashboard origin
+	dashboardDomain := "localhost:5173"
+	dashboardSnake := variables.DomainToSnake(dashboardDomain)
+	targetDir := filepath.Join(variables.BucketDir, dashboardSnake)
+	os.MkdirAll(targetDir, 0755)
+	defer os.RemoveAll(targetDir)
+
+	testFilePath := filepath.Join(targetDir, "test.txt")
+	os.WriteFile(testFilePath, []byte("hello dashboard file"), 0644)
+
+	// Case 1: WEB_DASHBOARD_ORIGIN matches dashboardDomain, but the domain is NOT in the database origins.
+	os.Setenv("WEB_DASHBOARD_ORIGIN", "http://"+dashboardDomain)
+	req := httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
+	req.Header.Set("Origin", "http://"+dashboardDomain)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for dashboard origin match via env, got %d, body: %s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "hello dashboard file" {
+		t.Errorf("Expected content 'hello dashboard file', got %q", w.Body.String())
+	}
+
+	// Case 2: Origin is NOT in DB and does NOT match WEB_DASHBOARD_ORIGIN
+	os.Setenv("WEB_DASHBOARD_ORIGIN", "http://someotherdashboard.com")
+	req = httptest.NewRequest(http.MethodGet, "/file/test.txt", nil)
+	req.Header.Set("Origin", "http://"+dashboardDomain)
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// It should serve forbidden HTML page or status code 403
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403 for unregistered origin, got %d", w.Code)
+	}
+
+	// Case 3: Origin is registered in the DB
+	// Add origin to DB
+	dbOrigin := originModel.Origin{
+		Domain: "registereddomain.com",
+	}
+	database.DB.Create(&dbOrigin)
+	defer database.DB.Delete(&dbOrigin)
+
+	registeredSnake := variables.DomainToSnake(dbOrigin.Domain)
+	targetRegisteredDir := filepath.Join(variables.BucketDir, registeredSnake)
+	os.MkdirAll(targetRegisteredDir, 0755)
+	defer os.RemoveAll(targetRegisteredDir)
+
+	registeredFilePath := filepath.Join(targetRegisteredDir, "reg.txt")
+	os.WriteFile(registeredFilePath, []byte("hello registered file"), 0644)
+
+	req = httptest.NewRequest(http.MethodGet, "/file/reg.txt", nil)
+	req.Header.Set("Origin", "http://registereddomain.com")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for registered DB origin, got %d, body: %s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "hello registered file" {
+		t.Errorf("Expected content 'hello registered file', got %q", w.Body.String())
+	}
+}
+

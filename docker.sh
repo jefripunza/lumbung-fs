@@ -141,9 +141,10 @@ else
   docker run -d \
     --privileged \
     --cap-add=NET_RAW \
-    -p 8080:8080 \
+    -p 5173:8080 \
     --name $CONTAINER_NAME \
     --hostname "$SSH_HOSTNAME" \
+    -e WEB_DASHBOARD_ORIGIN="$WEB_DASHBOARD_ORIGIN" \
     -e USERNAME="$USERNAME" \
     -e PASSWORD="$PASSWORD" \
     $IMAGE_NAME

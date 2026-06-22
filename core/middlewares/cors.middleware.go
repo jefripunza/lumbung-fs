@@ -14,7 +14,6 @@ import (
 	"lumbung-fs/core/templates"
 )
 
-
 // ParseDomain strips protocol and path, and port if it is 80 or 443
 func ParseDomain(raw string) string {
 	if raw == "" {
@@ -156,11 +155,24 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 			return
 		}
 
-		// 2. Validate domain against DB
+		// 2. Validate domain against DB or WEB_DASHBOARD_ORIGIN env
 		var dbOrigin originModel.Origin
-		result := database.DB.Where("domain = ?", requestDomain).First(&dbOrigin)
+		var isValid bool
 
-		if result.Error != nil {
+		dashboardOrigin := ParseDomain(os.Getenv("WEB_DASHBOARD_ORIGIN"))
+		result := database.DB.Where("domain = ?", requestDomain).First(&dbOrigin)
+		if result.Error == nil {
+			isValid = true
+		} else {
+			if dashboardOrigin != "" {
+				if requestDomain == dashboardOrigin {
+					isValid = true
+				}
+			}
+		}
+		log.Printf("dashboardOrigin %s, requestDomain %s, isValid %v\n", dashboardOrigin, requestDomain, isValid)
+
+		if !isValid {
 			// Domain not registered: Log or update UnknownOrigin
 			ip := GetClientIP(r)
 			log.Printf("Unknown origin request: domain=%s, ip=%s", requestDomain, ip)
@@ -185,7 +197,7 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 			return
 		}
 
-		if dbOrigin.IsBlocked {
+		if result.Error == nil && dbOrigin.IsBlocked {
 			http.Error(w, "Forbidden: Origin domain is blocked", http.StatusForbidden)
 			return
 		}

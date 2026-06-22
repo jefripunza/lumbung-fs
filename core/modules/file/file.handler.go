@@ -34,8 +34,15 @@ func ClientFileHandler(w http.ResponseWriter, r *http.Request) {
 	// Find origin record in DB to get ID and snake_case name
 	var origin originModel.Origin
 	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
-		http.Error(w, "Forbidden: Invalid origin", http.StatusForbidden)
-		return
+		dashboardOrigin := os.Getenv("WEB_DASHBOARD_ORIGIN")
+		if dashboardOrigin != "" && requestDomain == middlewares.ParseDomain(dashboardOrigin) {
+			origin = originModel.Origin{
+				Domain: requestDomain,
+			}
+		} else {
+			http.Error(w, "Forbidden: Invalid origin", http.StatusForbidden)
+			return
+		}
 	}
 
 	originSnake := variables.DomainToSnake(origin.Domain)
