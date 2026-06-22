@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"lumbung-fs/core/database"
@@ -57,9 +58,12 @@ func ServerStart() {
 	// and then check JWT inside /api/... handlers except login.
 	mainHandler := middlewares.CORSAndOriginHandler(adminAuthWrapper(mux))
 
-	port := 8080
-	log.Printf("LumbungFS server successfully started on port :%d", port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), mainHandler); err != nil {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("LumbungFS server successfully started on port :%s", port)
+	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), mainHandler); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
@@ -76,4 +80,3 @@ func adminAuthWrapper(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-

@@ -30,6 +30,7 @@ import (
 
 // setupTestDB creates an in-memory database and auto-migrates models
 func setupTestDB(t *testing.T) *gorm.DB {
+	os.Setenv("WEB_DASHBOARD_ORIGIN", "http://localhost:5173")
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to connect database: %v", err)
@@ -306,6 +307,7 @@ func TestAPIRoutingAndDashboardFlow(t *testing.T) {
 		"is_blocked": false,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/origins", bytes.NewBuffer(originBody))
+	req.Header.Set("Origin", "http://localhost:5173")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -323,6 +325,7 @@ func TestAPIRoutingAndDashboardFlow(t *testing.T) {
 
 	// 2. Query origins list
 	req = httptest.NewRequest(http.MethodGet, "/api/origins", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
 	req.Header.Set("Authorization", "Bearer "+token)
 	w = httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -345,6 +348,7 @@ func TestAPIRoutingAndDashboardFlow(t *testing.T) {
 		"value_extensions": "jpg",
 	})
 	req = httptest.NewRequest(http.MethodPost, "/api/rules", bytes.NewBuffer(ruleBody))
+	req.Header.Set("Origin", "http://localhost:5173")
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
@@ -649,7 +653,7 @@ func TestRuleEncryptionTransition(t *testing.T) {
 		"encryption_key": "secret-key-1"
 	}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/rules?id="+rRule.ID, bytes.NewReader(payloadJSON))
-	req.Header.Set("Origin", "http://testserve.com")
+	req.Header.Set("Origin", "http://localhost:5173")
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -695,7 +699,7 @@ func TestRuleEncryptionTransition(t *testing.T) {
 		"encryption_key": ""
 	}`)
 	reqDec := httptest.NewRequest(http.MethodPut, "/api/rules?id="+rRule.ID, bytes.NewReader(payloadJSONDec))
-	reqDec.Header.Set("Origin", "http://testserve.com")
+	reqDec.Header.Set("Origin", "http://localhost:5173")
 	reqDec.Header.Set("Content-Type", "application/json")
 	wDec := httptest.NewRecorder()
 	handler.ServeHTTP(wDec, reqDec)
@@ -714,3 +718,117 @@ func TestRuleEncryptionTransition(t *testing.T) {
 		t.Errorf("Expected file2 on disk to be decrypted back to plain text, got: %s", string(f2Dec))
 	}
 }
+
+func TestWebDashboardOriginValidation(t *testing.T) {
+	setupTestDB(t)
+
+	// Save original env
+	origEnv := os.Getenv("WEB_DASHBOARD_ORIGIN")
+	defer os.Setenv("WEB_DASHBOARD_ORIGIN", origEnv)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/test", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Success"))
+	})
+	handler := middlewares.CORSAndOriginHandler(mux)
+
+	// Case 1: WEB_DASHBOARD_ORIGIN is empty
+	os.Setenv("WEB_DASHBOARD_ORIGIN", "")
+	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403 when WEB_DASHBOARD_ORIGIN is empty, got %d", w.Code)
+	}
+
+	// Case 2: WEB_DASHBOARD_ORIGIN is set but request origin does not match
+	os.Setenv("WEB_DASHBOARD_ORIGIN", "http://localhost:5173")
+	req = httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	req.Header.Set("Origin", "http://malicious.com")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Expected status 403 when origin does not match WEB_DASHBOARD_ORIGIN, got %d", w.Code)
+	}
+
+	// Case 3: WEB_DASHBOARD_ORIGIN matches request origin
+	req = httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 when origin matches WEB_DASHBOARD_ORIGIN, got %d", w.Code)
+	}
+}
+
+func TestEnvCredentialsLogin(t *testing.T) {
+	setupTestDB(t)
+
+	// Save original envs
+	origUser := os.Getenv("USERNAME")
+	origPass := os.Getenv("PASSWORD")
+	defer func() {
+		os.Setenv("USERNAME", origUser)
+		os.Setenv("PASSWORD", origPass)
+	}()
+
+	// Case 1: USERNAME and PASSWORD set in env
+	os.Setenv("USERNAME", "customuser")
+	os.Setenv("PASSWORD", "custompass")
+
+	// Correct login
+	payload, _ := json.Marshal(map[string]string{
+		"username": "customuser",
+		"password": "custompass",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(payload))
+	w := httptest.NewRecorder()
+	auth.LoginHandler(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for correct env credentials, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Incorrect login password
+	payload, _ = json.Marshal(map[string]string{
+		"username": "customuser",
+		"password": "wrongpass",
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(payload))
+	w = httptest.NewRecorder()
+	auth.LoginHandler(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status 401 for incorrect env password, got %d", w.Code)
+	}
+
+	// Incorrect login username
+	payload, _ = json.Marshal(map[string]string{
+		"username": "wronguser",
+		"password": "custompass",
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(payload))
+	w = httptest.NewRecorder()
+	auth.LoginHandler(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status 401 for incorrect env username, got %d", w.Code)
+	}
+
+	// Case 2: Only USERNAME set in env
+	os.Setenv("USERNAME", "onlyuser")
+	os.Setenv("PASSWORD", "")
+
+	auth.InitCredentialsFile()
+
+	payload, _ = json.Marshal(map[string]string{
+		"username": "onlyuser",
+		"password": "123456",
+	})
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(payload))
+	w = httptest.NewRecorder()
+	auth.LoginHandler(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for custom username + default password, got %d, body: %s", w.Code, w.Body.String())
+	}
+}
+

@@ -10,15 +10,10 @@ if [ -f .env ]; then
   export $(grep -v '^#' .env | xargs)
 fi
 
-# SSH User and Password Configuration
-SSH_PORT=${SSH_PORT:-2222}
-SSH_USER=${SSH_USER:-ubuntu}
-SSH_PASSWORD=${SSH_PASSWORD:-ubuntu}
-SSH_HOSTNAME=${SSH_HOSTNAME:-server}
-
-# 9Router Default Configurations
-NINEROUTER_API_KEY=${NINEROUTER_API_KEY:-"sk-56503803bf2d0808-52zicd-0eba78fb"}
-NINEROUTER_URL=${NINEROUTER_URL:-"http://localhost:20128/v1"}
+# LumbungFS Environment Variables
+WEB_DASHBOARD_ORIGIN=${WEB_DASHBOARD_ORIGIN:-"http://localhost:5173"}
+USERNAME=${USERNAME:-"admin"}
+PASSWORD=${PASSWORD:-"123456"}
 
 while true; do
   echo "📋 Select option:"
@@ -146,15 +141,11 @@ else
   docker run -d \
     --privileged \
     --cap-add=NET_RAW \
-    -p "$SSH_PORT":22 \
-    -p 8888:9119 \
+    -p 8080:8080 \
     --name $CONTAINER_NAME \
     --hostname "$SSH_HOSTNAME" \
-    -e SSH_USER="$SSH_USER" \
-    -e SSH_PASSWORD="$SSH_PASSWORD" \
-    -e NINEROUTER_API_KEY="$NINEROUTER_API_KEY" \
-    -e NINEROUTER_URL="$NINEROUTER_URL" \
-    -e NINEROUTER_MODEL="nice" \
+    -e USERNAME="$USERNAME" \
+    -e PASSWORD="$PASSWORD" \
     $IMAGE_NAME
 
   echo "⌛ Waiting for container to initialize..."

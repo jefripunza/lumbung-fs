@@ -53,28 +53,62 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	passFile := variables.GetPasswordFilePath()
-	hashBytes, err := os.ReadFile(passFile)
-	if err != nil {
-		http.Error(w, "Internal server error: unable to verify credentials", http.StatusInternalServerError)
-		return
-	}
-
-	storedHash := strings.TrimSpace(string(hashBytes))
-
-	// Allow verification of:
-	// 1. Plain MD5 of password
-	// 2. MD5 of username:password
-	// 3. Special fallback case (admin/admin -> accepts 123456 or admin)
 	valid := false
-	if VerifyMD5(credentials.Password, storedHash) {
-		valid = true
-	} else if VerifyMD5(credentials.Username+":"+credentials.Password, storedHash) {
-		valid = true
-	} else if storedHash == DefaultMD5Hash {
-		// Default password.txt contains MD5 of "123456"
-		if credentials.Username == "admin" && (credentials.Password == "123456" || credentials.Password == "admin") {
+	envUsername := os.Getenv("USERNAME")
+	envPassword := os.Getenv("PASSWORD")
+
+	if envUsername != "" || envPassword != "" {
+		expectedUsername := "admin"
+		if envUsername != "" {
+			expectedUsername = envUsername
+		}
+
+		if credentials.Username == expectedUsername {
+			if envPassword != "" {
+				if credentials.Password == envPassword {
+					valid = true
+				}
+			} else {
+				// envUsername is set, but envPassword is not. Fallback to password.txt verification.
+				passFile := variables.GetPasswordFilePath()
+				hashBytes, err := os.ReadFile(passFile)
+				if err == nil {
+					storedHash := strings.TrimSpace(string(hashBytes))
+					if VerifyMD5(credentials.Password, storedHash) {
+						valid = true
+					} else if VerifyMD5(credentials.Username+":"+credentials.Password, storedHash) {
+						valid = true
+					} else if storedHash == DefaultMD5Hash {
+						if credentials.Password == "123456" || credentials.Password == "admin" {
+							valid = true
+						}
+					}
+				}
+			}
+		}
+	} else {
+		passFile := variables.GetPasswordFilePath()
+		hashBytes, err := os.ReadFile(passFile)
+		if err != nil {
+			http.Error(w, "Internal server error: unable to verify credentials", http.StatusInternalServerError)
+			return
+		}
+
+		storedHash := strings.TrimSpace(string(hashBytes))
+
+		// Allow verification of:
+		// 1. Plain MD5 of password
+		// 2. MD5 of username:password
+		// 3. Special fallback case (admin/admin -> accepts 123456 or admin)
+		if VerifyMD5(credentials.Password, storedHash) {
 			valid = true
+		} else if VerifyMD5(credentials.Username+":"+credentials.Password, storedHash) {
+			valid = true
+		} else if storedHash == DefaultMD5Hash {
+			// Default password.txt contains MD5 of "123456"
+			if credentials.Username == "admin" && (credentials.Password == "123456" || credentials.Password == "admin") {
+				valid = true
+			}
 		}
 	}
 

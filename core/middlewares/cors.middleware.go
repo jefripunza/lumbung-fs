@@ -1,15 +1,19 @@
 package middlewares
 
 import (
+	"html"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"lumbung-fs/core/database"
 	originModel "lumbung-fs/core/modules/origin/model"
+	"lumbung-fs/core/templates"
 )
+
 
 // ParseDomain strips protocol and path, and port if it is 80 or 443
 func ParseDomain(raw string) string {
@@ -104,12 +108,41 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 			return
 		}
 
-		// Allow localhost or direct server address for admin dashboard access
-		// but enforce rules on custom domains. We also check if it's an API route or presigned upload.
+		// Check if it's an API route or presigned upload.
 		isAPIRoute := strings.HasPrefix(r.URL.Path, "/api/")
 		isPresignedUpload := r.URL.Path == "/upload" && r.URL.Query().Get("token") != ""
-		if isAPIRoute || isPresignedUpload {
-			// Apply standard open CORS for administrative dashboard APIs and presigned uploads
+
+		if isAPIRoute {
+			dashboardOrigin := os.Getenv("WEB_DASHBOARD_ORIGIN")
+			if dashboardOrigin == "" {
+				http.Error(w, "Forbidden: WEB_DASHBOARD_ORIGIN env is required", http.StatusForbidden)
+				return
+			}
+			parsedDashboardOrigin := ParseDomain(dashboardOrigin)
+			if requestDomain != parsedDashboardOrigin {
+				http.Error(w, "Forbidden: Invalid dashboard origin", http.StatusForbidden)
+				return
+			}
+
+			originHeader := r.Header.Get("Origin")
+			if originHeader != "" && ParseDomain(originHeader) == parsedDashboardOrigin {
+				w.Header().Set("Access-Control-Allow-Origin", originHeader)
+			} else {
+				w.Header().Set("Access-Control-Allow-Origin", dashboardOrigin)
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if isPresignedUpload {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -148,7 +181,7 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 				database.DB.Create(&unknown)
 			}
 
-			http.Error(w, "Forbidden: Unknown origin domain", http.StatusForbidden)
+			serveForbiddenOriginHTML(w, requestDomain)
 			return
 		}
 
@@ -175,4 +208,14 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// serveForbiddenOriginHTML serves a beautifully designed HTML page for unregistered domain access.
+func serveForbiddenOriginHTML(w http.ResponseWriter, domain string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+
+	escapedDomain := html.EscapeString(domain)
+	res := strings.ReplaceAll(templates.ForbiddenOriginTemplate, "{{.Domain}}", escapedDomain)
+	w.Write([]byte(res))
 }
