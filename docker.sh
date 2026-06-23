@@ -140,6 +140,7 @@ else
   echo "🚀 Running new container..."
   docker run -d \
     --privileged \
+    --add-host=host.docker.internal:host-gateway \
     --cap-add=NET_RAW \
     -p 5173:8080 \
     --name $CONTAINER_NAME \

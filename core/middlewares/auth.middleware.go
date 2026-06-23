@@ -256,7 +256,7 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if resp.StatusCode != http.StatusOK {
 				bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("external validation returned status %d: %s", resp.StatusCode, string(bodyBytes))
 			}

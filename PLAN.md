@@ -166,7 +166,7 @@ We will use GORM to manage the following tables:
 - **Rule Verification Middleware**:
   - Analyzes the request path. If a rule exists for this path:
     - Perform request content size checks and file extension verification.
-    - If `validate_method` is set, verify via `validate_url`.
+    - If `validate_method` is set, verify via `validate_url`. The external service response must return HTTP status `200 OK` to allow file access; any other response status code blocks access.
   - For uploads (POST/PUT), if no matching path rule is found, the upload is blocked by default (`403 Forbidden`).
 - **REST API Upload**:
   - Exposes `POST /upload` endpoint for backend clients.

@@ -266,6 +266,53 @@ func TestEvaluatePathRules(t *testing.T) {
 	}
 }
 
+func TestStrictExternalValidation(t *testing.T) {
+	db := setupTestDB(t)
+
+	origin := originModel.Origin{Domain: "test-validation.com", IsBlocked: false}
+	db.Create(&origin)
+
+	// Set up a mock external validation server
+	var responseStatus int
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(responseStatus)
+		_, _ = w.Write([]byte("mock response body"))
+	}))
+	defer mockServer.Close()
+
+	// Create a rule with validate_url pointing to the mock server
+	rule := ruleModel.Rule{
+		OriginID:       origin.ID,
+		Path:           "secure",
+		ValidateMethod: "cache",
+		ValidateURL:    mockServer.URL,
+	}
+	db.Create(&rule)
+
+	req := httptest.NewRequest(http.MethodGet, "/file/secure/document.txt", nil)
+
+	// Test 1: External validation returns 200 OK -> Should allow access
+	responseStatus = http.StatusOK
+	allowed, _, _, err := middlewares.EvaluatePathRules(req, origin.ID, "secure/document.txt", 100, "txt")
+	if !allowed || err != nil {
+		t.Errorf("Expected allowed=true on 200 OK: %v", err)
+	}
+
+	// Test 2: External validation returns 201 Created -> Should block access (strict 200 enforcement)
+	responseStatus = http.StatusCreated
+	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "secure/document.txt", 100, "txt")
+	if allowed || err == nil {
+		t.Error("Expected disallowed on 201 Created")
+	}
+
+	// Test 3: External validation returns 401 Unauthorized -> Should block access
+	responseStatus = http.StatusUnauthorized
+	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "secure/document.txt", 100, "txt")
+	if allowed || err == nil {
+		t.Error("Expected disallowed on 401 Unauthorized")
+	}
+}
+
 func TestSecurePathTraversal(t *testing.T) {
 	_, err := fileExplorer.SecurePath("../main.go")
 	if err == nil {
