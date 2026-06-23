@@ -122,7 +122,7 @@ We will use GORM to manage the following tables:
 - `id` (UUIDv7, Primary Key)
 - `origin_id` (UUIDv7, Foreign Key to Origin)
 - `path` (string, e.g., "ktp" for "/file/ktp")
-- `validate_method` (string, dropdown: JWT, headers, cache)
+- `validate_method` (string, dropdown: JWT, headers, cookies)
 - `validate_headers` (string, comma-separated list of required header keys for "headers" validation)
 - `validate_url` (string, target service validation URL)
 - `validate_fallback_url` (string, optional backend fallback template)
@@ -213,9 +213,9 @@ We will use GORM to manage the following tables:
 
 ### G. Rules UI & Validation Method Refinement (Revisions Part 9)
 - **Grid Layout**: The Rules page UI displays the list of rules as a responsive grid with up to 4 columns on large screens. This avoids excessive white space and makes the layout compact.
-- **Cache Validation Method**:
-  - In addition to JWT and Headers, the "cache" validation method now fully supports configuring a target `validate_url` and optional `validate_fallback_url`.
-  - When creating or editing a rule, selecting "cache" displays the external validation fields so the admin can specify validation targets.
+- **Cookies Validation Method**:
+  - In addition to JWT and Headers, the "cookies" validation method now fully supports configuring a target `validate_url` and optional `validate_fallback_url`.
+  - When creating or editing a rule, selecting "cookies" displays the external validation fields so the admin can specify validation targets.
 
 
 

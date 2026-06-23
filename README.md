@@ -1,4 +1,4 @@
-# LumbungFS
+![LumbungFS Banner](./assets/LumbungFS-banner.png)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/jefriherditriyanto/lumbung-fs?style=flat-square&logo=docker)](https://hub.docker.com/r/jefriherditriyanto/lumbung-fs)
 [![Docker Image Size](https://img.shields.io/docker/image-size/jefriherditriyanto/lumbung-fs/latest?style=flat-square&logo=docker)](https://hub.docker.com/r/jefriherditriyanto/lumbung-fs)

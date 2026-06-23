@@ -284,7 +284,7 @@ func TestStrictExternalValidation(t *testing.T) {
 	rule := ruleModel.Rule{
 		OriginID:       origin.ID,
 		Path:           "secure",
-		ValidateMethod: "cache",
+		ValidateMethod: "cookies",
 		ValidateURL:    mockServer.URL,
 	}
 	db.Create(&rule)
@@ -404,7 +404,7 @@ func TestExternalValidationJsonError(t *testing.T) {
 	rule := ruleModel.Rule{
 		OriginID:       origin.ID,
 		Path:           "api-check",
-		ValidateMethod: "cache",
+		ValidateMethod: "cookies",
 		ValidateURL:    mockServer.URL,
 	}
 	db.Create(&rule)
@@ -469,7 +469,7 @@ func TestFallbackProxy(t *testing.T) {
 	rule := ruleModel.Rule{
 		OriginID:            origin.ID,
 		Path:                "secure-proxy",
-		ValidateMethod:      "cache",
+		ValidateMethod:      "cookies",
 		ValidateURL:         mockValidationServer.URL,
 		ValidateFallbackURL: mockFallbackServer.URL,
 	}

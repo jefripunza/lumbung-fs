@@ -108,8 +108,8 @@ function cleanFormPayload() {
     path: pathVal,
     validate_method: form.value.validate_method,
     validate_headers: headersStr,
-    validate_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cache') ? form.value.validate_url.trim() : '',
-    validate_fallback_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cache') ? form.value.validate_fallback_url.trim() : '',
+    validate_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cookies') ? form.value.validate_url.trim() : '',
+    validate_fallback_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cookies') ? form.value.validate_fallback_url.trim() : '',
     is_max_size: form.value.is_max_size,
     value_max_size: form.value.value_max_size,
     value_unit_size: form.value.value_unit_size,
@@ -285,7 +285,7 @@ async function handleDelete() {
             <option value="">None (Public)</option>
             <option value="JWT">JWT</option>
             <option value="headers">Headers</option>
-            <option value="cache">Cache</option>
+            <option value="cookies">Cookies</option>
           </select>
         </div>
 
@@ -310,12 +310,12 @@ async function handleDelete() {
         </div>
 
         <!-- Validate URL fields -->
-        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cache'" class="field">
+        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cookies'" class="field">
           <label class="field__label" for="rule-url">VALIDATE URL (EXTERNAL TARGET)</label>
           <input id="rule-url" v-model="form.validate_url" class="field__input" placeholder="https://api.example.com/auth/validate" required />
         </div>
         
-        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cache'" class="field">
+        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cookies'" class="field">
           <label class="field__label" for="rule-fallback">FALLBACK REDIRECT URL (OPTIONAL)</label>
           <input id="rule-fallback" v-model="form.validate_fallback_url" class="field__input" placeholder="https://example.com/login" />
         </div>

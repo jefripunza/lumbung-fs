@@ -10,7 +10,7 @@ type Rule struct {
 	ID                  string `gorm:"type:varchar(36);primaryKey;" json:"id"`
 	OriginID            string `gorm:"type:varchar(36);not null;index;" json:"origin_id"`
 	Path                string `gorm:"type:varchar(255);not null;" json:"path"` // e.g. "ktp" for "/file/.../ktp"
-	ValidateMethod      string `gorm:"type:varchar(255);" json:"validate_method"` // e.g. "jwt", "headers", "cache"
+	ValidateMethod      string `gorm:"type:varchar(255);" json:"validate_method"` // e.g. "jwt", "headers", "cookies"
 	ValidateHeaders     string `gorm:"type:varchar(512);" json:"validate_headers"` // comma-separated required headers
 	ValidateURL         string `gorm:"type:varchar(1024);" json:"validate_url"` // external verification endpoint
 	ValidateFallbackURL string `gorm:"type:varchar(1024);" json:"validate_fallback_url"` // fallback redirect URL

@@ -5,6 +5,7 @@ import { useOriginsStore } from '@/stores/origins'
 import MossButton from '@/components/MossButton.vue'
 import OutlineButton from '@/components/OutlineButton.vue'
 import ModalDialog from '@/components/ModalDialog.vue'
+import { VPdfViewer } from '@vue-pdf-viewer/viewer'
 
 const store = useExplorerStore()
 const originsStore = useOriginsStore()
@@ -77,16 +78,26 @@ const showImagePreviewModal = ref(false)
 const previewImageUrl = ref('')
 const isPreviewLoading = ref(false)
 const previewImageName = ref('')
+const previewType = ref<'image' | 'pdf'>('image')
 
 function isImage(name: string): boolean {
   const ext = name.split('.').pop()?.toLowerCase() || ''
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)
 }
 
+function isPdf(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || ''
+  return ext === 'pdf'
+}
+
 function openItem(item: FileItem) {
   if (item.is_dir) {
     store.listItems(item.path)
   } else if (isImage(item.name)) {
+    previewType.value = 'image'
+    openImagePreview(item)
+  } else if (isPdf(item.name)) {
+    previewType.value = 'pdf'
     openImagePreview(item)
   }
 }
@@ -449,7 +460,10 @@ const fileIcon = (item: FileItem) => {
         Loading preview…
       </div>
       <div v-else class="image-preview-modal-body">
-        <div class="image-preview-container">
+        <div v-if="previewType === 'pdf'" class="pdf-preview-container">
+          <VPdfViewer :src="previewImageUrl" />
+        </div>
+        <div v-else class="image-preview-container">
           <img
             :src="previewImageUrl"
             class="preview-img"
@@ -823,6 +837,15 @@ const fileIcon = (item: FileItem) => {
   border-radius: var(--radius-xl);
   padding: var(--spacing-16);
   border: 0.5px solid var(--color-lichen);
+}
+.pdf-preview-container {
+  width: 100%;
+  height: 60vh;
+  min-height: 480px;
+  background: var(--color-sage-paper);
+  border-radius: var(--radius-xl);
+  border: 0.5px solid var(--color-lichen);
+  overflow: hidden;
 }
 .preview-img {
   max-width: 100%;
