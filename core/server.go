@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"lumbung-fs/core/database"
@@ -51,6 +52,9 @@ func ServerStart() {
 	// 5. Register Module Routes
 	modules.RegisterAllRoutes(mux)
 
+	// Catch-all route to serve the built frontend SPA
+	registerFrontendSPA(mux)
+
 	// 6. Wrap administrative and client routes with appropriate middlewares
 	// Note: CORSAndOriginHandler handles origin validation & dashboard CORS.
 	// AdminAuth is applied individually inside RegisterAllRoutes or via a sub-router pattern.
@@ -78,5 +82,42 @@ func adminAuthWrapper(next http.Handler) http.Handler {
 			return
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// registerFrontendSPA registers a catch-all handler to serve frontend SPA files from web/dist
+func registerFrontendSPA(mux *http.ServeMux) {
+	staticDir := "./web/dist"
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Do not serve index.html for missing API endpoints
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		path := r.URL.Path
+		if path == "/" {
+			path = "/index.html"
+		}
+
+		targetPath := filepath.Join(staticDir, filepath.Clean(path))
+
+		// Check if file exists on disk
+		info, err := os.Stat(targetPath)
+		if err == nil && !info.IsDir() {
+			http.ServeFile(w, r, targetPath)
+			return
+		}
+
+		// Fallback to index.html if it exists
+		indexPath := filepath.Join(staticDir, "index.html")
+		if _, err := os.Stat(indexPath); err == nil {
+			http.ServeFile(w, r, indexPath)
+			return
+		}
+
+		// If web/dist is not found, return 404
+		http.NotFound(w, r)
 	})
 }

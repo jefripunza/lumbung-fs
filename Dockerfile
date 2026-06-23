@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 
 # copy compiled files
 COPY --from=be-builder /app/lumbung-fs /app/lumbung-fs
+COPY --from=be-builder /app/web/dist /app/web/dist
 
 # run
 CMD ["./lumbung-fs"]
