@@ -203,6 +203,18 @@ async function handleDelete() {
   showDeleteConfirm.value = false
   deleteTarget.value = null
 }
+
+function openCreateModal() {
+  resetForm()
+  showCreateModal.value = true
+}
+
+function closeFormModal() {
+  showCreateModal.value = false
+  showEditModal.value = false
+  editTarget.value = null
+  resetForm()
+}
 </script>
 
 <template>
@@ -220,13 +232,7 @@ async function handleDelete() {
             {{ o.domain }}
           </option>
         </select>
-        <MossButton
-          @click="
-            resetForm()
-            showCreateModal = true
-          "
-          >+ Add Rule</MossButton
-        >
+        <MossButton @click="openCreateModal">+ Add Rule</MossButton>
       </div>
     </div>
 
@@ -297,17 +303,11 @@ async function handleDelete() {
       </SageCard>
     </div>
 
-    <!-- Create/Edit Modal (shared) -->
     <ModalDialog
       v-if="showCreateModal || showEditModal"
       :title="showEditModal ? 'Edit Rule' : 'Add Rule'"
       max-width="560px"
-      @close="
-        showCreateModal = false
-        showEditModal = false
-        editTarget = null
-        resetForm()
-      "
+      @close="closeFormModal"
     >
       <form @submit.prevent="showEditModal ? handleEdit() : handleCreate()" class="modal-form">
         <div class="field" v-if="!showEditModal">
@@ -504,14 +504,7 @@ async function handleDelete() {
         </div>
       </form>
       <template #footer>
-        <OutlineButton
-          @click="
-            showCreateModal = false
-            showEditModal = false
-            resetForm()
-          "
-          >Cancel</OutlineButton
-        >
+        <OutlineButton @click="closeFormModal">Cancel</OutlineButton>
         <MossButton @click="showEditModal ? handleEdit() : handleCreate()">
           {{ showEditModal ? 'Save Changes' : 'Create Rule' }}
         </MossButton>
