@@ -1,7 +1,8 @@
-revisi part 8 :
+revisi part 9 :
 - di menu "Rules"
-  - di popup add dan edit rule
-    - encrypt: jika awal nya uncheck, lalu di check maka semua file di path itu di encrypt, namun jika dari check ke uncheck maka semua file di path itu di decrypt, (perlu sedikit waktu tergantung jumlah file). perhatikan backend jika file encrypt maka ketika ambil /file brarti di decrypt;
+  - card nya di bagi 4, sekarang cuman 1 tp yang kosong banyak, putih panjang, jelek, jadikan 4 card;
+  - di add dan edit
+    - di field "VALIDATE METHOD", jika memilih "cache" maka butuh field seperti JWT, existing jika memilih cache tidak terjadi apa2;
 
 revisi di PLAN.md dan revisi kode;
 

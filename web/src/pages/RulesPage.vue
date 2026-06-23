@@ -108,8 +108,8 @@ function cleanFormPayload() {
     path: pathVal,
     validate_method: form.value.validate_method,
     validate_headers: headersStr,
-    validate_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers') ? form.value.validate_url.trim() : '',
-    validate_fallback_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers') ? form.value.validate_fallback_url.trim() : '',
+    validate_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cache') ? form.value.validate_url.trim() : '',
+    validate_fallback_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cache') ? form.value.validate_fallback_url.trim() : '',
     is_max_size: form.value.is_max_size,
     value_max_size: form.value.value_max_size,
     value_unit_size: form.value.value_unit_size,
@@ -310,12 +310,12 @@ async function handleDelete() {
         </div>
 
         <!-- Validate URL fields -->
-        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers'" class="field">
+        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cache'" class="field">
           <label class="field__label" for="rule-url">VALIDATE URL (EXTERNAL TARGET)</label>
           <input id="rule-url" v-model="form.validate_url" class="field__input" placeholder="https://api.example.com/auth/validate" required />
         </div>
         
-        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers'" class="field">
+        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cache'" class="field">
           <label class="field__label" for="rule-fallback">FALLBACK REDIRECT URL (OPTIONAL)</label>
           <input id="rule-fallback" v-model="form.validate_fallback_url" class="field__input" placeholder="https://example.com/login" />
         </div>
@@ -452,16 +452,32 @@ async function handleDelete() {
 
 /* ───── List ───── */
 .rules-page__list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-12);
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: var(--spacing-16);
+}
+@media (min-width: 640px) {
+  .rules-page__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .rules-page__list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .rules-page__list {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 /* ───── Card ───── */
 .rule-card {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-12);
+  gap: var(--spacing-16);
+  height: 100%;
   transition: box-shadow 0.2s ease;
 }
 .rule-card:hover {
@@ -489,8 +505,9 @@ async function handleDelete() {
 }
 .rule-card__details {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-16);
+  flex-direction: column;
+  gap: var(--spacing-12);
+  flex: 1;
 }
 .rule-card__detail {
   display: flex;
@@ -517,7 +534,7 @@ async function handleDelete() {
 .rule-card__actions {
   display: flex;
   gap: var(--spacing-8);
-  margin-top: var(--spacing-4);
+  margin-top: auto;
 }
 
 /* ───── Modal Form ───── */
