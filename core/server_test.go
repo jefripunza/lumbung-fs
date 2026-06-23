@@ -445,6 +445,65 @@ func TestExternalValidationJsonError(t *testing.T) {
 	}
 }
 
+func TestFallbackProxy(t *testing.T) {
+	db := setupTestDB(t)
+
+	origin := originModel.Origin{Domain: "proxy-test.com", IsBlocked: false}
+	db.Create(&origin)
+
+	// Fallback mock server returns custom HTML error content
+	mockFallbackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNotFound) // Custom code
+		_, _ = w.Write([]byte("<html><body>Custom Proxy Error Page</body></html>"))
+	}))
+	defer mockFallbackServer.Close()
+
+	// Validation mock server rejects
+	mockValidationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer mockValidationServer.Close()
+
+	// Create rule with validate_url and validate_fallback_url
+	rule := ruleModel.Rule{
+		OriginID:            origin.ID,
+		Path:                "secure-proxy",
+		ValidateMethod:      "cache",
+		ValidateURL:         mockValidationServer.URL,
+		ValidateFallbackURL: mockFallbackServer.URL,
+	}
+	db.Create(&rule)
+
+	// Setup database directory and a dummy file so Stat succeeds
+	variables.EnsureBucketDir()
+	originSnake := variables.DomainToSnake(origin.Domain)
+	targetDir := filepath.Join(variables.BucketDir, originSnake, "secure-proxy")
+	_ = os.MkdirAll(targetDir, 0755)
+	filePath := filepath.Join(targetDir, "test.txt")
+	_ = os.WriteFile(filePath, []byte("original content"), 0644)
+	defer os.RemoveAll(filepath.Join(variables.BucketDir, originSnake))
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/file/", file.ClientFileHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/file/secure-proxy/test.txt", nil)
+	req.Host = "proxy-test.com"
+	w := httptest.NewRecorder()
+
+	mux.ServeHTTP(w, req)
+
+	// Verify that we got the fallback server response status code and body instead of a 302 redirect
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status code %d from proxy, got %d", http.StatusNotFound, w.Code)
+	}
+
+	bodyStr := w.Body.String()
+	if !strings.Contains(bodyStr, "Custom Proxy Error Page") {
+		t.Errorf("Expected body to contain fallback page content, got: %s", bodyStr)
+	}
+}
+
 func TestSecurePathTraversal(t *testing.T) {
 	_, err := fileExplorer.SecurePath("../main.go")
 	if err == nil {

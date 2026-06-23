@@ -19,6 +19,13 @@ const AccessDeniedTemplate = `<!DOCTYPE html>
             --accent-glow: radial-gradient(circle, rgba(239, 68, 68, 0.15) 0%, rgba(168, 85, 247, 0.05) 50%, transparent 100%);
         }
 
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -29,7 +36,6 @@ const AccessDeniedTemplate = `<!DOCTYPE html>
             font-family: 'Outfit', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-primary);
-            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;

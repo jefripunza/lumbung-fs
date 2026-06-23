@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"lumbung-fs/core/database"
 	"lumbung-fs/core/functions"
@@ -96,7 +97,38 @@ func ClientFileHandler(w http.ResponseWriter, r *http.Request) {
 		allowed, fallbackURL, status, err := middlewares.EvaluatePathRules(r, origin.ID, subpath, info.Size(), ext)
 		if !allowed {
 			if fallbackURL != "" {
-				http.Redirect(w, r, fallbackURL, http.StatusFound)
+				client := &http.Client{Timeout: 10 * time.Second}
+				req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, fallbackURL, nil)
+				if err != nil {
+					renderAccessDenied(w, r, "Access Denied", "You do not have permission to access this file.", fmt.Sprintf("Failed to initialize proxy to fallback URL: %v", err), status)
+					return
+				}
+
+				// Forward standard request headers
+				for key, vals := range r.Header {
+					keyLower := strings.ToLower(key)
+					if keyLower == "user-agent" || keyLower == "accept" || keyLower == "accept-language" {
+						for _, val := range vals {
+							req.Header.Add(key, val)
+						}
+					}
+				}
+
+				resp, err := client.Do(req)
+				if err != nil {
+					renderAccessDenied(w, r, "Access Denied", "You do not have permission to access this file.", fmt.Sprintf("Failed to proxy fallback URL: %v", err), status)
+					return
+				}
+				defer resp.Body.Close()
+
+				// Copy response headers and body
+				for key, vals := range resp.Header {
+					for _, val := range vals {
+						w.Header().Add(key, val)
+					}
+				}
+				w.WriteHeader(resp.StatusCode)
+				_, _ = io.Copy(w, resp.Body)
 				return
 			}
 			title := "Access Denied"

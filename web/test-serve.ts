@@ -8,7 +8,7 @@ const server = serve({
     "/api/validate": async (req) => {
       console.log({ req });
       try {
-        return Response.json({ message: "OK" }, { status: 400 }); // 100 - 599
+        return Response.json({ message: "OK" }, { status: 300 }); // 100 - 599
       } catch (error) {
         return Response.json({ error: error }, { status: 500 });
       }

@@ -166,7 +166,7 @@ We will use GORM to manage the following tables:
 - **Rule Verification Middleware**:
   - Analyzes the request path. If a rule exists for this path:
     - Perform request content size checks and file extension verification.
-    - If `validate_method` is set and the request is a file access/download request (`GET`), verify via the specified method (e.g. JWT, headers, or `validate_url`). For JWT validation, the token can be provided either in the `Authorization` header or via the `token` query parameter. For external validation via `validate_url`, the external service response must return HTTP status `200 OK` to allow file access; any other response status code blocks access. These validation method checks are bypassed during file uploads (`POST`/`PUT`).
+    - If `validate_method` is set and the request is a file access/download request (`GET`), verify via the specified method (e.g. JWT, headers, or `validate_url`). For JWT validation, the token can be provided either in the `Authorization` header or via the `token` query parameter. For external validation via `validate_url`, the external service response must return an HTTP status code in the `100 - 399` range to allow file access; status codes in the `400 - 599` range block access. If access is blocked, and `validate_fallback_url` is configured, the server proxies the fallback page contents directly rather than performing a standard 3xx redirect. Otherwise, a beautiful premium HTML error page is served. These validation method checks are bypassed during file uploads (`POST`/`PUT`).
   - For uploads (POST/PUT), if no matching path rule is found, the upload is blocked by default (`403 Forbidden`).
 - **REST API Upload**:
   - Exposes `POST /upload` endpoint for backend clients.
