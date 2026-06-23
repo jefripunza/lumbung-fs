@@ -1261,3 +1261,60 @@ func TestAPIRouteCORSWithRegisteredOrigin(t *testing.T) {
 	}
 }
 
+func TestClientFileHandlerCaching(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Register origin
+	domain := "cache-origin.com"
+	origin := originModel.Origin{Domain: domain}
+	if err := db.Create(&origin).Error; err != nil {
+		t.Fatalf("failed to create origin: %v", err)
+	}
+
+	// Create a rule with cache enabled
+	rule := ruleModel.Rule{
+		OriginID:   origin.ID,
+		Path:       "cached-path",
+		IsCache:    true,
+		ValueCache: 2,
+		UnitCache:  "day",
+	}
+	if err := db.Create(&rule).Error; err != nil {
+		t.Fatalf("failed to create rule: %v", err)
+	}
+
+	// Set up file directory and file
+	domainSnake := variables.DomainToSnake(domain)
+	targetDir := filepath.Join(variables.BucketDir, domainSnake, "cached-path")
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("failed to create dir: %v", err)
+	}
+	defer os.RemoveAll(filepath.Join(variables.BucketDir, domainSnake))
+
+	filePath := filepath.Join(targetDir, "image.png")
+	if err := os.WriteFile(filePath, []byte("fake image content"), 0644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	// Setup mock server/handler
+	mux := http.NewServeMux()
+	mux.HandleFunc("/file/", file.ClientFileHandler)
+	handler := middlewares.CORSAndOriginHandler(mux)
+
+	// Make request
+	req := httptest.NewRequest(http.MethodGet, "/file/cached-path/image.png", nil)
+	req.Header.Set("Origin", "http://"+domain)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 OK, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	cacheControl := w.Header().Get("Cache-Control")
+	expected := "public, max-age=172800" // 2 days = 2 * 86400 = 172800
+	if cacheControl != expected {
+		t.Errorf("expected Cache-Control to be %q, got %q", expected, cacheControl)
+	}
+}
+

@@ -23,6 +23,9 @@ type Rule struct {
 	CompressLevel       int    `gorm:"not null;default:3;" json:"compress_level"`
 	IsEncrypt           bool   `gorm:"not null;default:false;" json:"is_encrypt"`
 	EncryptionKey       string `gorm:"type:varchar(255);" json:"encryption_key"`
+	IsCache             bool   `gorm:"not null;default:false;" json:"is_cache"`
+	ValueCache          int    `gorm:"not null;default:1;" json:"value_cache"`
+	UnitCache           string `gorm:"type:varchar(10);not null;default:'year';" json:"unit_cache"`
 }
 
 // BeforeCreate hook to generate UUIDv7 before inserting

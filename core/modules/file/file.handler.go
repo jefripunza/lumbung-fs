@@ -151,11 +151,34 @@ func ClientFileHandler(w http.ResponseWriter, r *http.Request) {
 		var compress, encrypt bool
 		var compressLevel int
 		var encryptionKey string
+		var isCache bool
+		var valCache int
+		var unitCache string
 		if matchedRule, err := middlewares.FindMatchingRule(origin.ID, subpath); err == nil && matchedRule != nil {
 			compress = matchedRule.IsCompress
 			compressLevel = matchedRule.CompressLevel
 			encrypt = matchedRule.IsEncrypt
 			encryptionKey = matchedRule.EncryptionKey
+			isCache = matchedRule.IsCache
+			valCache = matchedRule.ValueCache
+			unitCache = matchedRule.UnitCache
+		}
+
+		if isCache {
+			var maxAge int64
+			switch strings.ToLower(unitCache) {
+			case "hour":
+				maxAge = int64(valCache) * 3600
+			case "day":
+				maxAge = int64(valCache) * 86400
+			case "month":
+				maxAge = int64(valCache) * 2592000
+			case "year":
+				maxAge = int64(valCache) * 31536000
+			default:
+				maxAge = int64(valCache) * 31536000
+			}
+			w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", maxAge))
 		}
 
 		if compress || encrypt {

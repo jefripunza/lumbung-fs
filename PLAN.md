@@ -135,6 +135,9 @@ We will use GORM to manage the following tables:
 - `compress_level` (integer, default 3)
 - `is_encrypt` (boolean)
 - `encryption_key` (string, optional)
+- `is_cache` (boolean)
+- `value_cache` (integer, default 1)
+- `unit_cache` (string, default "year", options: hour, day, month, year)
 
 ---
 

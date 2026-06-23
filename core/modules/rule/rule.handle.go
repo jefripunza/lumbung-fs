@@ -77,6 +77,9 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		CompressLevel       int    `json:"compress_level"`
 		IsEncrypt           bool   `json:"is_encrypt"`
 		EncryptionKey       string `json:"encryption_key"`
+		IsCache             bool   `json:"is_cache"`
+		ValueCache          int    `json:"value_cache"`
+		UnitCache           string `json:"unit_cache"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -107,6 +110,15 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		level = 3
 	}
 
+	valCache := input.ValueCache
+	if valCache < 1 {
+		valCache = 1
+	}
+	unitCache := strings.ToLower(strings.TrimSpace(input.UnitCache))
+	if unitCache == "" {
+		unitCache = "year"
+	}
+
 	rule := ruleModel.Rule{
 		OriginID:            input.OriginID,
 		Path:                pathClean,
@@ -123,6 +135,9 @@ func CreateRule(w http.ResponseWriter, r *http.Request) {
 		CompressLevel:       level,
 		IsEncrypt:           input.IsEncrypt,
 		EncryptionKey:       strings.TrimSpace(input.EncryptionKey),
+		IsCache:             input.IsCache,
+		ValueCache:          valCache,
+		UnitCache:           unitCache,
 	}
 
 	if err := database.DB.Create(&rule).Error; err != nil {
@@ -168,6 +183,9 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 		CompressLevel       int    `json:"compress_level"`
 		IsEncrypt           bool   `json:"is_encrypt"`
 		EncryptionKey       string `json:"encryption_key"`
+		IsCache             bool   `json:"is_cache"`
+		ValueCache          int    `json:"value_cache"`
+		UnitCache           string `json:"unit_cache"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -212,6 +230,17 @@ func UpdateRule(w http.ResponseWriter, r *http.Request) {
 	rule.CompressLevel = level
 	rule.IsEncrypt = input.IsEncrypt
 	rule.EncryptionKey = strings.TrimSpace(input.EncryptionKey)
+	rule.IsCache = input.IsCache
+	valCache := input.ValueCache
+	if valCache < 1 {
+		valCache = 1
+	}
+	rule.ValueCache = valCache
+	unitCache := strings.ToLower(strings.TrimSpace(input.UnitCache))
+	if unitCache == "" {
+		unitCache = "year"
+	}
+	rule.UnitCache = unitCache
 
 	// Apply file transition
 	newPath := rule.Path

@@ -36,7 +36,10 @@ const form = ref({
   compress_level: 3,
   is_encrypt: false,
   encryption_key: '',
-  headers: [{ id: Math.random().toString(36).substring(2), value: '' }]
+  is_cache: false,
+  value_cache: 1,
+  unit_cache: 'year',
+  headers: [{ id: Math.random().toString(36).substring(2), value: '' }],
 })
 
 function resetForm() {
@@ -56,7 +59,10 @@ function resetForm() {
     compress_level: 3,
     is_encrypt: false,
     encryption_key: '',
-    headers: [{ id: Math.random().toString(36).substring(2), value: '' }]
+    is_cache: false,
+    value_cache: 1,
+    unit_cache: 'year',
+    headers: [{ id: Math.random().toString(36).substring(2), value: '' }],
   }
 }
 
@@ -100,7 +106,10 @@ function cleanFormPayload() {
 
   let headersStr = ''
   if (form.value.validate_method === 'headers') {
-    headersStr = form.value.headers.map(h => h.value.trim()).filter(Boolean).join(',')
+    headersStr = form.value.headers
+      .map((h) => h.value.trim())
+      .filter(Boolean)
+      .join(',')
   }
 
   return {
@@ -108,8 +117,18 @@ function cleanFormPayload() {
     path: pathVal,
     validate_method: form.value.validate_method,
     validate_headers: headersStr,
-    validate_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cookies') ? form.value.validate_url.trim() : '',
-    validate_fallback_url: (form.value.validate_method === 'JWT' || form.value.validate_method === 'headers' || form.value.validate_method === 'cookies') ? form.value.validate_fallback_url.trim() : '',
+    validate_url:
+      form.value.validate_method === 'JWT' ||
+      form.value.validate_method === 'headers' ||
+      form.value.validate_method === 'cookies'
+        ? form.value.validate_url.trim()
+        : '',
+    validate_fallback_url:
+      form.value.validate_method === 'JWT' ||
+      form.value.validate_method === 'headers' ||
+      form.value.validate_method === 'cookies'
+        ? form.value.validate_fallback_url.trim()
+        : '',
     is_max_size: form.value.is_max_size,
     value_max_size: form.value.value_max_size,
     value_unit_size: form.value.value_unit_size,
@@ -118,7 +137,10 @@ function cleanFormPayload() {
     is_compress: form.value.is_compress,
     compress_level: form.value.compress_level,
     is_encrypt: form.value.is_encrypt,
-    encryption_key: form.value.encryption_key.trim()
+    encryption_key: form.value.encryption_key.trim(),
+    is_cache: form.value.is_cache,
+    value_cache: form.value.is_cache ? Math.max(1, form.value.value_cache || 1) : 1,
+    unit_cache: form.value.unit_cache || 'year',
   }
 }
 
@@ -132,8 +154,10 @@ async function handleCreate() {
 
 function openEdit(rule: Rule) {
   editTarget.value = rule
-  const hdrs = rule.validate_headers 
-    ? rule.validate_headers.split(',').map(h => ({ id: Math.random().toString(36).substring(2), value: h }))
+  const hdrs = rule.validate_headers
+    ? rule.validate_headers
+        .split(',')
+        .map((h) => ({ id: Math.random().toString(36).substring(2), value: h }))
     : [{ id: Math.random().toString(36).substring(2), value: '' }]
   form.value = {
     origin_id: rule.origin_id,
@@ -151,7 +175,10 @@ function openEdit(rule: Rule) {
     compress_level: rule.compress_level || 3,
     is_encrypt: rule.is_encrypt,
     encryption_key: rule.encryption_key || '',
-    headers: hdrs
+    is_cache: rule.is_cache || false,
+    value_cache: rule.value_cache || 1,
+    unit_cache: rule.unit_cache || 'year',
+    headers: hdrs,
   }
   showEditModal.value = true
 }
@@ -193,7 +220,13 @@ async function handleDelete() {
             {{ o.domain }}
           </option>
         </select>
-        <MossButton @click="resetForm(); showCreateModal = true">+ Add Rule</MossButton>
+        <MossButton
+          @click="
+            resetForm()
+            showCreateModal = true
+          "
+          >+ Add Rule</MossButton
+        >
       </div>
     </div>
 
@@ -208,11 +241,7 @@ async function handleDelete() {
     </div>
 
     <div v-else class="rules-page__list">
-      <SageCard
-        v-for="rule in filteredRules"
-        :key="rule.id"
-        class="rule-card"
-      >
+      <SageCard v-for="rule in filteredRules" :key="rule.id" class="rule-card">
         <div class="rule-card__header">
           <div class="rule-card__path-row">
             <PillTag>{{ getDomainName(rule.origin_id) }}</PillTag>
@@ -228,7 +257,9 @@ async function handleDelete() {
           </div>
           <div v-if="rule.is_max_size" class="rule-card__detail">
             <span class="rule-card__detail-label">Max Size</span>
-            <span class="rule-card__detail-value">{{ rule.value_max_size }} {{ rule.value_unit_size }}</span>
+            <span class="rule-card__detail-value"
+              >{{ rule.value_max_size }} {{ rule.value_unit_size }}</span
+            >
           </div>
           <div v-if="rule.is_extensions" class="rule-card__detail">
             <span class="rule-card__detail-label">Extensions</span>
@@ -236,7 +267,9 @@ async function handleDelete() {
           </div>
           <div v-if="rule.validate_url" class="rule-card__detail">
             <span class="rule-card__detail-label">Validate URL</span>
-            <span class="rule-card__detail-value rule-card__detail-value--url">{{ rule.validate_url }}</span>
+            <span class="rule-card__detail-value rule-card__detail-value--url">{{
+              rule.validate_url
+            }}</span>
           </div>
           <div v-if="rule.is_compress" class="rule-card__detail">
             <span class="rule-card__detail-label">Compress</span>
@@ -244,7 +277,16 @@ async function handleDelete() {
           </div>
           <div v-if="rule.is_encrypt" class="rule-card__detail">
             <span class="rule-card__detail-label">Encrypt</span>
-            <span class="rule-card__detail-value">{{ rule.encryption_key ? 'Custom Key' : 'Default Key' }}</span>
+            <span class="rule-card__detail-value">{{
+              rule.encryption_key ? 'Custom Key' : 'Default Key'
+            }}</span>
+          </div>
+          <div v-if="rule.is_cache" class="rule-card__detail">
+            <span class="rule-card__detail-label">Cache</span>
+            <span class="rule-card__detail-value"
+              >{{ rule.value_cache }} {{ rule.unit_cache
+              }}{{ rule.value_cache > 1 ? 's' : '' }}</span
+            >
           </div>
         </div>
 
@@ -260,22 +302,35 @@ async function handleDelete() {
       v-if="showCreateModal || showEditModal"
       :title="showEditModal ? 'Edit Rule' : 'Add Rule'"
       max-width="560px"
-      @close="showCreateModal = false; showEditModal = false; editTarget = null; resetForm()"
+      @close="
+        showCreateModal = false
+        showEditModal = false
+        editTarget = null
+        resetForm()
+      "
     >
       <form @submit.prevent="showEditModal ? handleEdit() : handleCreate()" class="modal-form">
         <div class="field" v-if="!showEditModal">
           <label class="field__label" for="rule-origin">ORIGIN</label>
           <select id="rule-origin" v-model="form.origin_id" class="field__input" required>
             <option value="" disabled>Select origin…</option>
-            <option v-for="o in originsStore.origins" :key="o.id" :value="o.id">{{ o.domain }}</option>
+            <option v-for="o in originsStore.origins" :key="o.id" :value="o.id">
+              {{ o.domain }}
+            </option>
           </select>
         </div>
-        
+
         <div class="field">
           <label class="field__label" for="rule-path">PATH</label>
           <div class="path-input-wrapper">
             <span class="path-prefix">/file/</span>
-            <input id="rule-path" v-model="form.path" class="field__input path-field" placeholder="uploads" required />
+            <input
+              id="rule-path"
+              v-model="form.path"
+              class="field__input path-field"
+              placeholder="uploads"
+              required
+            />
           </div>
         </div>
 
@@ -293,7 +348,9 @@ async function handleDelete() {
         <div v-if="form.validate_method === 'headers'" class="headers-card">
           <div class="headers-card__header">
             <span class="headers-card__title">REQUIRED HEADERS</span>
-            <button type="button" class="headers-card__add" @click="addHeaderKey">+ Add Header</button>
+            <button type="button" class="headers-card__add" @click="addHeaderKey">
+              + Add Header
+            </button>
           </div>
           <div class="headers-card__list">
             <div v-for="(hdr, idx) in form.headers" :key="hdr.id" class="header-field-row">
@@ -304,20 +361,47 @@ async function handleDelete() {
                 placeholder="X-Api-Key"
                 required
               />
-              <button type="button" class="header-remove-btn" @click="removeHeaderKey(idx)">✕</button>
+              <button type="button" class="header-remove-btn" @click="removeHeaderKey(idx)">
+                ✕
+              </button>
             </div>
           </div>
         </div>
 
         <!-- Validate URL fields -->
-        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cookies'" class="field">
+        <div
+          v-if="
+            form.validate_method === 'JWT' ||
+            form.validate_method === 'headers' ||
+            form.validate_method === 'cookies'
+          "
+          class="field"
+        >
           <label class="field__label" for="rule-url">VALIDATE URL (EXTERNAL TARGET)</label>
-          <input id="rule-url" v-model="form.validate_url" class="field__input" placeholder="https://api.example.com/auth/validate" required />
+          <input
+            id="rule-url"
+            v-model="form.validate_url"
+            class="field__input"
+            placeholder="https://api.example.com/auth/validate"
+            required
+          />
         </div>
-        
-        <div v-if="form.validate_method === 'JWT' || form.validate_method === 'headers' || form.validate_method === 'cookies'" class="field">
+
+        <div
+          v-if="
+            form.validate_method === 'JWT' ||
+            form.validate_method === 'headers' ||
+            form.validate_method === 'cookies'
+          "
+          class="field"
+        >
           <label class="field__label" for="rule-fallback">FALLBACK REDIRECT URL (OPTIONAL)</label>
-          <input id="rule-fallback" v-model="form.validate_fallback_url" class="field__input" placeholder="https://example.com/login" />
+          <input
+            id="rule-fallback"
+            v-model="form.validate_fallback_url"
+            class="field__input"
+            placeholder="https://example.com/login"
+          />
         </div>
 
         <div class="field__row">
@@ -326,7 +410,12 @@ async function handleDelete() {
             <span>Limit file size</span>
           </label>
           <div v-if="form.is_max_size" class="field__inline">
-            <input v-model.number="form.value_max_size" type="number" class="field__input field__input--small" min="1" />
+            <input
+              v-model.number="form.value_max_size"
+              type="number"
+              class="field__input field__input--small"
+              min="1"
+            />
             <select v-model="form.value_unit_size" class="field__input field__input--small">
               <option>KB</option>
               <option>MB</option>
@@ -340,34 +429,89 @@ async function handleDelete() {
             <input type="checkbox" v-model="form.is_extensions" />
             <span>Restrict extensions</span>
           </label>
-          <input v-if="form.is_extensions" v-model="form.value_extensions" class="field__input" placeholder="jpg,png,pdf" />
+          <input
+            v-if="form.is_extensions"
+            v-model="form.value_extensions"
+            class="field__input"
+            placeholder="jpg,png,pdf"
+          />
         </div>
 
-        <div class="field__row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+        <div class="field__row" style="flex-direction: column; align-items: flex-start; gap: 8px">
           <label class="field__checkbox">
             <input type="checkbox" v-model="form.is_compress" />
-            <span>compress file</span>
+            <span>Compress File (zstd)</span>
           </label>
-          <div v-if="form.is_compress" style="width: 100%; display: flex; align-items: center; gap: 8px; padding-left: 24px;">
-            <span class="field__label" style="font-size: 11px; margin-bottom: 0;">compress level</span>
-            <select v-model.number="form.compress_level" class="field__input field__input--small" style="width: 100px;">
+          <div
+            v-if="form.is_compress"
+            style="width: 100%; display: flex; align-items: center; gap: 8px; padding-left: 24px"
+          >
+            <span class="field__label" style="font-size: 11px; margin-bottom: 0"
+              >compress level</span
+            >
+            <select
+              v-model.number="form.compress_level"
+              class="field__input field__input--small"
+              style="width: 100px"
+            >
               <option v-for="level in 22" :key="level" :value="level">{{ level }}</option>
             </select>
           </div>
         </div>
 
-        <div class="field__row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+        <div class="field__row" style="flex-direction: column; align-items: flex-start; gap: 8px">
           <label class="field__checkbox">
             <input type="checkbox" v-model="form.is_encrypt" />
-            <span>encrypt file</span>
+            <span>Encrypt File</span>
           </label>
-          <div v-if="form.is_encrypt" style="width: 100%; padding-left: 24px;">
-            <input v-model="form.encryption_key" class="field__input" placeholder="encryption_key (optional)" />
+          <div v-if="form.is_encrypt" style="width: 100%; padding-left: 24px">
+            <input
+              v-model="form.encryption_key"
+              class="field__input"
+              placeholder="encryption_key (optional)"
+            />
+          </div>
+        </div>
+
+        <div class="field__row" style="flex-direction: column; align-items: flex-start; gap: 8px">
+          <label class="field__checkbox">
+            <input type="checkbox" v-model="form.is_cache" />
+            <span>Cache (Max-Age)</span>
+          </label>
+          <div
+            v-if="form.is_cache"
+            style="width: 100%; display: flex; align-items: center; gap: 8px; padding-left: 24px"
+          >
+            <input
+              type="number"
+              v-model.number="form.value_cache"
+              class="field__input field__input--small"
+              style="width: 100px"
+              min="1"
+              required
+            />
+            <select
+              v-model="form.unit_cache"
+              class="field__input field__input--small"
+              style="width: 120px"
+            >
+              <option value="hour">hour</option>
+              <option value="day">day</option>
+              <option value="month">month</option>
+              <option value="year">year</option>
+            </select>
           </div>
         </div>
       </form>
       <template #footer>
-        <OutlineButton @click="showCreateModal = false; showEditModal = false; resetForm()">Cancel</OutlineButton>
+        <OutlineButton
+          @click="
+            showCreateModal = false
+            showEditModal = false
+            resetForm()
+          "
+          >Cancel</OutlineButton
+        >
         <MossButton @click="showEditModal ? handleEdit() : handleCreate()">
           {{ showEditModal ? 'Save Changes' : 'Create Rule' }}
         </MossButton>
@@ -375,9 +519,22 @@ async function handleDelete() {
     </ModalDialog>
 
     <!-- Delete Confirmation Modal -->
-    <ModalDialog v-if="showDeleteConfirm" title="Delete Rule" max-width="420px" @close="showDeleteConfirm = false">
-      <div style="font-family: var(--font-denim); font-size: 14px; color: var(--color-forest-ink); line-height: 1.5;">
-        Are you sure you want to delete rule for path <strong>/file/{{ deleteTarget?.path }}</strong>? This action cannot be undone.
+    <ModalDialog
+      v-if="showDeleteConfirm"
+      title="Delete Rule"
+      max-width="420px"
+      @close="showDeleteConfirm = false"
+    >
+      <div
+        style="
+          font-family: var(--font-denim);
+          font-size: 14px;
+          color: var(--color-forest-ink);
+          line-height: 1.5;
+        "
+      >
+        Are you sure you want to delete rule for path <strong>/file/{{ deleteTarget?.path }}</strong
+        >? This action cannot be undone.
       </div>
       <template #footer>
         <OutlineButton @click="showDeleteConfirm = false">Cancel</OutlineButton>
@@ -448,7 +605,11 @@ async function handleDelete() {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* ───── List ───── */
 .rules-page__list {
@@ -517,7 +678,7 @@ async function handleDelete() {
 .rule-card__detail-label {
   font-family: var(--font-cinetype);
   font-size: 10px;
-  letter-spacing: 0.20em;
+  letter-spacing: 0.2em;
   color: var(--color-slate-smoke);
   text-transform: uppercase;
 }
@@ -551,7 +712,7 @@ async function handleDelete() {
 .field__label {
   font-family: var(--font-cinetype);
   font-size: 11px;
-  letter-spacing: 0.20em;
+  letter-spacing: 0.2em;
   color: var(--color-slate-smoke);
   text-transform: uppercase;
 }
@@ -638,7 +799,7 @@ async function handleDelete() {
 .headers-card__title {
   font-family: var(--font-cinetype);
   font-size: 11px;
-  letter-spacing: 0.20em;
+  letter-spacing: 0.2em;
   color: var(--color-slate-smoke);
 }
 .headers-card__add {

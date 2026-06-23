@@ -19,6 +19,9 @@ export interface Rule {
   compress_level: number
   is_encrypt: boolean
   encryption_key: string
+  is_cache: boolean
+  value_cache: number
+  unit_cache: string
 }
 
 export const useRulesStore = defineStore('rules', () => {
