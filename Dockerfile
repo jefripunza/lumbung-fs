@@ -13,8 +13,8 @@ FROM frontend AS fe-builder
 WORKDIR /app
 
 # install dependencies
-COPY ./web/package.json ./
-RUN bun install
+COPY ./web/package.json ./web/bun.lock ./
+RUN bun install --frozen-lockfile
 
 # build
 COPY ./web/ .
