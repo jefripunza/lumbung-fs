@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -266,9 +267,30 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != http.StatusOK {
-				bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("external validation returned status %d: %s", resp.StatusCode, string(bodyBytes))
+			if resp.StatusCode >= 100 && resp.StatusCode < 400 {
+				// Access allowed
+			} else {
+				bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+				var jsonMap map[string]interface{}
+				extractedMsg := ""
+				if err := json.Unmarshal(bodyBytes, &jsonMap); err == nil {
+					if msg, ok := jsonMap["message"].(string); ok && msg != "" {
+						extractedMsg = msg
+					} else if errMsg, ok := jsonMap["error"].(string); ok && errMsg != "" {
+						extractedMsg = errMsg
+					} else if errObj, ok := jsonMap["error"].(map[string]interface{}); ok {
+						if msg, ok := errObj["message"].(string); ok {
+							extractedMsg = msg
+						}
+					}
+				}
+				if extractedMsg == "" {
+					extractedMsg = strings.TrimSpace(string(bodyBytes))
+				}
+				if extractedMsg == "" {
+					extractedMsg = fmt.Sprintf("External validation returned status %d", resp.StatusCode)
+				}
+				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("%s (status %d)", extractedMsg, resp.StatusCode)
 			}
 		}
 	}

@@ -298,14 +298,14 @@ func TestStrictExternalValidation(t *testing.T) {
 		t.Errorf("Expected allowed=true on 200 OK: %v", err)
 	}
 
-	// Test 2: External validation returns 201 Created -> Should block access (strict 200 enforcement)
+	// Test 2: External validation returns 201 Created -> Should allow access (100-399 range)
 	responseStatus = http.StatusCreated
 	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "secure/document.txt", 100, "txt")
-	if allowed || err == nil {
-		t.Error("Expected disallowed on 201 Created")
+	if !allowed || err != nil {
+		t.Errorf("Expected allowed=true on 201 Created: %v", err)
 	}
 
-	// Test 3: External validation returns 401 Unauthorized -> Should block access
+	// Test 3: External validation returns 401 Unauthorized -> Should block access (400-599 range)
 	responseStatus = http.StatusUnauthorized
 	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "secure/document.txt", 100, "txt")
 	if allowed || err == nil {
@@ -383,6 +383,65 @@ func TestJWTValidationHeaderOrQuery(t *testing.T) {
 	}
 	if lastAuthHeader != "bearer my-jwt-token-3" {
 		t.Errorf("Expected forwarded Authorization header to be 'bearer my-jwt-token-3', got: '%s'", lastAuthHeader)
+	}
+}
+
+func TestExternalValidationJsonError(t *testing.T) {
+	db := setupTestDB(t)
+
+	origin := originModel.Origin{Domain: "json-err.com", IsBlocked: false}
+	db.Create(&origin)
+
+	var mockResponse string
+	var mockStatus int
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(mockStatus)
+		_, _ = w.Write([]byte(mockResponse))
+	}))
+	defer mockServer.Close()
+
+	rule := ruleModel.Rule{
+		OriginID:       origin.ID,
+		Path:           "api-check",
+		ValidateMethod: "cache",
+		ValidateURL:    mockServer.URL,
+	}
+	db.Create(&rule)
+
+	req := httptest.NewRequest(http.MethodGet, "/file/api-check/photo.jpg", nil)
+
+	// Case 1: JSON response contains "message"
+	mockStatus = http.StatusForbidden
+	mockResponse = `{"message": "Custom forbidden message"}`
+	allowed, _, _, err := middlewares.EvaluatePathRules(req, origin.ID, "api-check/photo.jpg", 100, "jpg")
+	if allowed || err == nil {
+		t.Error("Expected access to be denied")
+	}
+	if err != nil && !strings.Contains(err.Error(), "Custom forbidden message") {
+		t.Errorf("Expected error to contain 'Custom forbidden message', got: %v", err)
+	}
+
+	// Case 2: JSON response contains "error" as string
+	mockStatus = http.StatusInternalServerError
+	mockResponse = `{"error": "Database error details"}`
+	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "api-check/photo.jpg", 100, "jpg")
+	if allowed || err == nil {
+		t.Error("Expected access to be denied")
+	}
+	if err != nil && !strings.Contains(err.Error(), "Database error details") {
+		t.Errorf("Expected error to contain 'Database error details', got: %v", err)
+	}
+
+	// Case 3: JSON response contains "error" as object with "message" (Bun SQL format)
+	mockStatus = http.StatusBadRequest
+	mockResponse = `{"error": {"message": "Invalid query parameters"}}`
+	allowed, _, _, err = middlewares.EvaluatePathRules(req, origin.ID, "api-check/photo.jpg", 100, "jpg")
+	if allowed || err == nil {
+		t.Error("Expected access to be denied")
+	}
+	if err != nil && !strings.Contains(err.Error(), "Invalid query parameters") {
+		t.Errorf("Expected error to contain 'Invalid query parameters', got: %v", err)
 	}
 }
 

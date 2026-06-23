@@ -3,6 +3,7 @@ package file
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"lumbung-fs/core/middlewares"
 	fileExplorer "lumbung-fs/core/modules/file-explorer"
 	originModel "lumbung-fs/core/modules/origin/model"
+	"lumbung-fs/core/templates"
 	"lumbung-fs/core/variables"
 
 	"github.com/google/uuid"
@@ -97,11 +99,19 @@ func ClientFileHandler(w http.ResponseWriter, r *http.Request) {
 				http.Redirect(w, r, fallbackURL, http.StatusFound)
 				return
 			}
-			errMsg := "Access denied by path rules"
+			title := "Access Denied"
+			errMsg := "You do not have permission to access this file."
+			var details string
 			if err != nil {
-				errMsg = fmt.Sprintf("Access denied: %v", err)
+				details = err.Error()
+				if strings.Contains(strings.ToLower(details), "dial tcp") ||
+					strings.Contains(strings.ToLower(details), "connect: connection refused") ||
+					strings.Contains(strings.ToLower(details), "no such host") {
+					title = "Connection Failed"
+					errMsg = "LumbungFS was unable to contact the external validation service."
+				}
 			}
-			http.Error(w, errMsg, status)
+			renderAccessDenied(w, r, title, errMsg, details, status)
 			return
 		}
 
@@ -264,4 +274,40 @@ func checkApiKey(r *http.Request, originApiKey string) bool {
 		}
 	}
 	return apiKey == originApiKey
+}
+
+func renderAccessDenied(w http.ResponseWriter, r *http.Request, title, errorMessage, details string, status int) {
+	accept := r.Header.Get("Accept")
+	contentType := r.Header.Get("Content-Type")
+	if strings.Contains(strings.ToLower(accept), "application/json") ||
+		strings.Contains(strings.ToLower(contentType), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":   errorMessage,
+			"details": details,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+
+	tmpl, err := template.New("access_denied").Parse(templates.AccessDeniedTemplate)
+	if err != nil {
+		http.Error(w, errorMessage, status)
+		return
+	}
+
+	data := struct {
+		Title        string
+		ErrorMessage string
+		Details      string
+	}{
+		Title:        title,
+		ErrorMessage: errorMessage,
+		Details:      details,
+	}
+
+	_ = tmpl.Execute(w, data)
 }
