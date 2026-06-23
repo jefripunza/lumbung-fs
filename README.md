@@ -71,6 +71,71 @@ services:
 
 ---
 
+## 📤 Backend File Uploads (via `curl`)
+
+LumbungFS supports two ways of uploading files programmatically. Note that all backend requests must include a `Host` or `Origin` header that matches the registered origin domain:
+
+### 1. Direct Upload using Origin API Key
+
+Perform a direct multipart `POST` to the `/upload` endpoint, passing the target subpath as the `path` form field and the API Key in the `X-API-Key` header:
+
+```bash
+curl -X POST http://localhost:8080/upload \
+  -H "X-API-Key: YOUR_ORIGIN_API_KEY" \
+  -F "path=file" \
+  -F "file=@/path/to/local/image.png"
+```
+
+Response:
+
+```json
+{
+  "message": "File uploaded successfully",
+  "original_filename": "image.png",
+  "filename": "018f7c5e-88cc-75b2-baee-191b7d598583.png",
+  "url": "https://yourdomain.com/file/images/018f7c5e-88cc-75b2-baee-191b7d598583.png",
+  "path": "yourdomain_com/images/018f7c5e-88cc-75b2-baee-191b7d598583.png",
+  "size": 1024
+}
+```
+
+### 2. Two-Step Presigned Token Upload Flow
+
+Use this flow when you want your frontend clients to upload files directly to storage without exposing the primary API key:
+
+#### **Step 1: Request a Presigned Upload URL (Backend-to-Backend)**
+
+Generate a single-use token valid for 1 minute:
+
+```bash
+curl -X POST http://localhost:8080/upload/prepare \
+  -H "X-API-Key: YOUR_ORIGIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"path": "url/to/file"}'
+```
+
+Response:
+
+```json
+{
+  "presigned_url": "https://yourdomain.com/upload?token=01904a8b-cb62-7e00-a54f-124b893a7493",
+  "token": "01904a8b-cb62-7e00-a54f-124b893a7493",
+  "path": "images",
+  "expires_at": "2026-06-23T09:15:00Z"
+}
+```
+
+#### **Step 2: Upload File (Client-to-Storage)**
+
+Perform the actual upload using the returned `presigned_url`. No API Key or Host headers are required for the tokenized upload:
+
+```bash
+curl -X POST "http://localhost:8080/upload?token=01904a8b-cb62-7e00-a54f-124b893a7493" \
+  -F "file=@/path/to/local/image.png"
+```
+
+---
+
 ## 📂 Storage Architecture
 
 The container exposes two primary directories for persistent storage:

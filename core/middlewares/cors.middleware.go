@@ -12,6 +12,9 @@ import (
 	"lumbung-fs/core/database"
 	originModel "lumbung-fs/core/modules/origin/model"
 	"lumbung-fs/core/templates"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // ParseDomain strips protocol and path, and port if it is 80 or 443
@@ -160,8 +163,11 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 		var isValid bool
 
 		dashboardOrigin := ParseDomain(os.Getenv("WEB_DASHBOARD_ORIGIN"))
-		result := database.DB.Where("domain = ?", requestDomain).First(&dbOrigin)
-		if result.Error == nil {
+		if err := database.DB.
+			Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}). // silent mode to avoid noise
+			Where("domain = ?", requestDomain).
+			First(&dbOrigin).
+			Error; err == nil {
 			isValid = true
 		} else {
 			if dashboardOrigin != "" {
@@ -197,7 +203,7 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 			return
 		}
 
-		if result.Error == nil && dbOrigin.IsBlocked {
+		if dbOrigin.IsBlocked {
 			http.Error(w, "Forbidden: Origin domain is blocked", http.StatusForbidden)
 			return
 		}

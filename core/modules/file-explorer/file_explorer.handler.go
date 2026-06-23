@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // FileItem represents a file or folder in the explorer
@@ -385,7 +386,11 @@ func StartPresignedURLCleanupWorker(db *gorm.DB) {
 	ticker := time.NewTicker(10 * time.Second)
 	for range ticker.C {
 		cutoff := time.Now().Add(-1 * time.Minute)
-		if err := db.Where("created_at < ?", cutoff).Delete(&explorerModel.PresignedURL{}).Error; err != nil {
+		if err := db.
+			Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}). // silent mode to avoid noise
+			Where("created_at < ?", cutoff).
+			Delete(&explorerModel.PresignedURL{}).
+			Error; err != nil {
 			log.Printf("Error cleaning up expired presigned URLs: %v", err)
 		}
 	}
