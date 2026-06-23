@@ -29,7 +29,6 @@ docker run -d \
   --name lumbung-fs \
   -p 8080:8080 \
   -v $(pwd)/bucket:/app/bucket \
-  -v $(pwd)/db:/app/db \
   -e WEB_DASHBOARD_ORIGIN="http://localhost:5173" \
   -e USERNAME="admin" \
   -e PASSWORD="your-secure-password" \
@@ -53,7 +52,6 @@ services:
       - "8080:8080"
     volumes:
       - ./bucket:/app/bucket
-      - ./db:/app/db
     environment:
       - WEB_DASHBOARD_ORIGIN=http://localhost:5173
       - USERNAME=admin
@@ -78,7 +76,6 @@ services:
 The container exposes two primary directories for persistent storage:
 
 - `/app/bucket`: Stores all raw and encrypted assets sorted by registered origins snake_case domain names.
-- `/app/db`: Stores the internal SQLite database (`lumbung-fs.db`) managing rules, logs, and origin registries.
 
 _Make sure to mount these directories to local volumes to avoid data loss on container recreation._
 
