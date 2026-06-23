@@ -129,21 +129,43 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 
 		if isAPIRoute {
 			dashboardOrigin := os.Getenv("WEB_DASHBOARD_ORIGIN")
-			if dashboardOrigin == "" {
-				http.Error(w, "Forbidden: WEB_DASHBOARD_ORIGIN env is required", http.StatusForbidden)
-				return
-			}
 			parsedDashboardOrigin := ParseDomain(dashboardOrigin)
-			if requestDomain != parsedDashboardOrigin {
+
+			isValid := false
+			var dbOrigin originModel.Origin
+
+			if requestDomain != "" {
+				if parsedDashboardOrigin != "" && requestDomain == parsedDashboardOrigin {
+					isValid = true
+				} else {
+					if err := database.DB.
+						Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).
+						Where("domain = ?", requestDomain).
+						First(&dbOrigin).
+						Error; err == nil {
+						if !dbOrigin.IsBlocked {
+							isValid = true
+						}
+					}
+				}
+			}
+
+			if !isValid {
 				http.Error(w, "Forbidden: Invalid dashboard origin", http.StatusForbidden)
 				return
 			}
 
 			originHeader := r.Header.Get("Origin")
-			if originHeader != "" && ParseDomain(originHeader) == parsedDashboardOrigin {
+			if originHeader != "" {
 				w.Header().Set("Access-Control-Allow-Origin", originHeader)
 			} else {
-				w.Header().Set("Access-Control-Allow-Origin", dashboardOrigin)
+				if parsedDashboardOrigin != "" && requestDomain == parsedDashboardOrigin {
+					w.Header().Set("Access-Control-Allow-Origin", dashboardOrigin)
+				} else if dbOrigin.Domain != "" {
+					w.Header().Set("Access-Control-Allow-Origin", "http://"+dbOrigin.Domain)
+				} else {
+					w.Header().Set("Access-Control-Allow-Origin", "*")
+				}
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")

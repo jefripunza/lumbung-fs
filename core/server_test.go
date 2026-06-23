@@ -1208,3 +1208,56 @@ func TestApiKeyOriginFallback(t *testing.T) {
 	}
 }
 
+func TestAPIRouteCORSWithRegisteredOrigin(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a registered origin
+	origin := originModel.Origin{Domain: "registered-api-domain.com", IsBlocked: false}
+	db.Create(&origin)
+
+	mux := http.NewServeMux()
+	// Register a simple api route
+	mux.HandleFunc("/api/test-route", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	handler := middlewares.CORSAndOriginHandler(mux)
+
+	// Case 1: Hitting from registered domain -> should be allowed
+	req1 := httptest.NewRequest(http.MethodGet, "/api/test-route", nil)
+	req1.Header.Set("Origin", "http://registered-api-domain.com")
+	w1 := httptest.NewRecorder()
+	handler.ServeHTTP(w1, req1)
+
+	if w1.Code != http.StatusOK {
+		t.Errorf("Expected 200 OK for registered origin, got %d. Body: %s", w1.Code, w1.Body.String())
+	}
+	if w1.Header().Get("Access-Control-Allow-Origin") != "http://registered-api-domain.com" {
+		t.Errorf("Expected CORS Access-Control-Allow-Origin to be 'http://registered-api-domain.com', got '%s'", w1.Header().Get("Access-Control-Allow-Origin"))
+	}
+
+	// Case 2: Hitting from unregistered domain -> should be forbidden
+	req2 := httptest.NewRequest(http.MethodGet, "/api/test-route", nil)
+	req2.Header.Set("Origin", "http://unregistered-api-domain.com")
+	w2 := httptest.NewRecorder()
+	handler.ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 Forbidden for unregistered origin, got %d", w2.Code)
+	}
+
+	// Case 3: Hitting from blocked registered domain -> should be forbidden
+	blockedOrigin := originModel.Origin{Domain: "blocked-api-domain.com", IsBlocked: true}
+	db.Create(&blockedOrigin)
+
+	req3 := httptest.NewRequest(http.MethodGet, "/api/test-route", nil)
+	req3.Header.Set("Origin", "http://blocked-api-domain.com")
+	w3 := httptest.NewRecorder()
+	handler.ServeHTTP(w3, req3)
+
+	if w3.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 Forbidden for blocked origin, got %d", w3.Code)
+	}
+}
+

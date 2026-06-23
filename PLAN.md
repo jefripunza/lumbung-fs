@@ -161,7 +161,8 @@ We will use GORM to manage the following tables:
 ### C. CORS & Rules Middleware
 - **Domain Verification Middleware**:
   - Validates the request domain (resolved via `Origin`, `X-Forwarded-Host`, `X-Original-Host`, `Referer`, or `Host` headers) against the registered origins in the database.
-  - If not found: logs or updates the `unknown_origins` database logs, then returns a `Forbidden` error.
+  - For API routes (`/api/...`), allows access if the request domain matches the `WEB_DASHBOARD_ORIGIN` environment variable or is registered in the `origins` database table (and is not blocked).
+  - If not found or not valid: logs or updates the `unknown_origins` database logs, then returns a `Forbidden` error.
   - If found but `is_blocked == true`: block access immediately.
 - **Rule Verification Middleware**:
   - Analyzes the request path. If a rule exists for this path:
