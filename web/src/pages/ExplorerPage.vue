@@ -77,9 +77,21 @@ const showImagePreviewModal = ref(false)
 const previewImageUrl = ref('')
 const isPreviewLoading = ref(false)
 const previewImageName = ref('')
+const previewType = ref<'image' | 'video' | 'audio'>('image')
+
 function isImage(name: string): boolean {
   const ext = name.split('.').pop()?.toLowerCase() || ''
   return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)
+}
+
+function isVideo(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || ''
+  return ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(ext)
+}
+
+function isAudio(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || ''
+  return ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac'].includes(ext)
 }
 
 function isPdf(name: string): boolean {
@@ -87,10 +99,38 @@ function isPdf(name: string): boolean {
   return ext === 'pdf'
 }
 
+function getMimeType(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() || ''
+  const mimes: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    ogg: 'video/ogg',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    aac: 'audio/aac',
+    m4a: 'audio/mp4',
+    flac: 'audio/flac',
+  }
+  return mimes[ext] || 'application/octet-stream'
+}
+
 async function openItem(item: FileItem) {
   if (item.is_dir) {
     store.listItems(item.path)
   } else if (isImage(item.name)) {
+    previewType.value = 'image'
+    openImagePreview(item)
+  } else if (isVideo(item.name)) {
+    previewType.value = 'video'
+    openImagePreview(item)
+  } else if (isAudio(item.name)) {
+    previewType.value = 'audio'
     openImagePreview(item)
   } else if (isPdf(item.name)) {
     try {
@@ -118,11 +158,13 @@ async function openImagePreview(item: FileItem) {
     const token = localStorage.getItem('lumbungfs_token')
     const url = `/api/explorer/download?path=${encodeURIComponent(item.path)}`
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    if (!res.ok) throw new Error('Failed to load image')
+    if (!res.ok) throw new Error('Failed to load media')
     const blob = await res.blob()
-    previewImageUrl.value = URL.createObjectURL(blob)
+    const mime = getMimeType(item.name)
+    const mediaBlob = new Blob([blob], { type: mime })
+    previewImageUrl.value = URL.createObjectURL(mediaBlob)
   } catch (err) {
-    console.error('Error loading preview image:', err)
+    console.error('Error loading preview media:', err)
   } finally {
     isPreviewLoading.value = false
   }
@@ -467,7 +509,24 @@ const fileIcon = (item: FileItem) => {
       </div>
       <div v-else class="image-preview-modal-body">
         <div class="image-preview-container">
+          <video
+            v-if="previewType === 'video'"
+            :src="previewImageUrl"
+            controls
+            autoplay
+            class="preview-video"
+          ></video>
+          <div v-else-if="previewType === 'audio'" class="preview-audio-container">
+            <span class="audio-player-icon">🎵</span>
+            <audio
+              :src="previewImageUrl"
+              controls
+              autoplay
+              class="preview-audio"
+            ></audio>
+          </div>
           <img
+            v-else
             :src="previewImageUrl"
             class="preview-img"
             alt="Preview"
@@ -845,6 +904,34 @@ const fileIcon = (item: FileItem) => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+.preview-video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-lg);
+  outline: none;
+}
+.preview-audio-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-16);
+  width: 100%;
+  padding: var(--spacing-24);
+}
+.audio-player-icon {
+  font-size: 48px;
+  animation: pulse 2s infinite ease-in-out;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
+.preview-audio {
+  width: 100%;
+  max-width: 400px;
+  outline: none;
 }
 
 /* ───── Explorer Table ───── */
