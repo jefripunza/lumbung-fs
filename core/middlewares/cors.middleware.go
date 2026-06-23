@@ -105,7 +105,20 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 		// 1. Determine origin domain
 		requestDomain := ResolveDomain(r)
 
-		if requestDomain == "" {
+		// Check if request has an API Key first
+		var apiKey string
+		apiKey = r.Header.Get("X-API-Key")
+		if apiKey == "" {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				parts := strings.Split(authHeader, " ")
+				if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+					apiKey = parts[1]
+				}
+			}
+		}
+
+		if requestDomain == "" && apiKey == "" {
 			http.Error(w, "Forbidden: Missing origin or host header", http.StatusForbidden)
 			return
 		}
@@ -162,17 +175,29 @@ func CORSAndOriginHandler(next http.Handler) http.Handler {
 		var dbOrigin originModel.Origin
 		var isValid bool
 
+		if apiKey != "" {
+			if err := database.DB.
+				Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}).
+				Where("api_key = ?", apiKey).
+				First(&dbOrigin).
+				Error; err == nil {
+				isValid = true
+			}
+		}
+
 		dashboardOrigin := ParseDomain(os.Getenv("WEB_DASHBOARD_ORIGIN"))
-		if err := database.DB.
-			Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}). // silent mode to avoid noise
-			Where("domain = ?", requestDomain).
-			First(&dbOrigin).
-			Error; err == nil {
-			isValid = true
-		} else {
-			if dashboardOrigin != "" {
-				if requestDomain == dashboardOrigin {
-					isValid = true
+		if !isValid && requestDomain != "" {
+			if err := database.DB.
+				Session(&gorm.Session{Logger: logger.Default.LogMode(logger.Silent)}). // silent mode to avoid noise
+				Where("domain = ?", requestDomain).
+				First(&dbOrigin).
+				Error; err == nil {
+				isValid = true
+			} else {
+				if dashboardOrigin != "" {
+					if requestDomain == dashboardOrigin {
+						isValid = true
+					}
 				}
 			}
 		}

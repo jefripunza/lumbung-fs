@@ -1,8 +1,7 @@
-revisi part 9 :
+revisi part 10 :
 - di menu "Rules"
-  - card nya di bagi 4, sekarang cuman 1 tp yang kosong banyak, putih panjang, jelek, jadikan 4 card;
-  - di add dan edit
-    - di field "VALIDATE METHOD", jika memilih "cache" maka butuh field seperti JWT, existing jika memilih cache tidak terjadi apa2;
+  - di popup
+    - di field "VALIDATE URL" jika dipakai maka agar bisa melihat file maka response dari url tersebut harus code http 200, dan jika code http selain 200 maka file tidak bisa diakses;
 
 revisi di PLAN.md dan revisi kode;
 

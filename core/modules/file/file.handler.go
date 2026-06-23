@@ -28,20 +28,38 @@ func ClientFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve origin domain from request
-	requestDomain := middlewares.ResolveDomain(r)
-
-	// Find origin record in DB to get ID and snake_case name
+	// Try lookup by API Key first if present
 	var origin originModel.Origin
-	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
-		dashboardOrigin := os.Getenv("WEB_DASHBOARD_ORIGIN")
-		if dashboardOrigin != "" && requestDomain == middlewares.ParseDomain(dashboardOrigin) {
-			origin = originModel.Origin{
-				Domain: requestDomain,
+	var resolved bool
+	apiKey := r.Header.Get("X-API-Key")
+	if apiKey == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				apiKey = parts[1]
 			}
-		} else {
-			http.Error(w, "Forbidden: Invalid origin", http.StatusForbidden)
-			return
+		}
+	}
+
+	if apiKey != "" {
+		if err := database.DB.Where("api_key = ?", apiKey).First(&origin).Error; err == nil {
+			resolved = true
+		}
+	}
+
+	if !resolved {
+		requestDomain := middlewares.ResolveDomain(r)
+		if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
+			dashboardOrigin := os.Getenv("WEB_DASHBOARD_ORIGIN")
+			if dashboardOrigin != "" && requestDomain == middlewares.ParseDomain(dashboardOrigin) {
+				origin = originModel.Origin{
+					Domain: requestDomain,
+				}
+			} else {
+				http.Error(w, "Forbidden: Invalid origin", http.StatusForbidden)
+				return
+			}
 		}
 	}
 

@@ -231,18 +231,16 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestDomain := middlewares.ResolveDomain(r)
-
-	var origin originModel.Origin
-	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
-		respondWithError(w, http.StatusForbidden, "Forbidden: Invalid origin")
+	originPtr, err := getOriginFromRequest(r)
+	if err != nil {
+		status := http.StatusForbidden
+		if strings.HasPrefix(err.Error(), "Unauthorized:") {
+			status = http.StatusUnauthorized
+		}
+		respondWithError(w, status, err.Error())
 		return
 	}
-
-	if !checkApiKey(r, origin.ApiKey) {
-		respondWithError(w, http.StatusUnauthorized, "Unauthorized: Invalid or missing API key")
-		return
-	}
+	origin := *originPtr
 
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Failed to parse multipart form")
@@ -351,18 +349,16 @@ func PrepareUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestDomain := middlewares.ResolveDomain(r)
-
-	var origin originModel.Origin
-	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
-		respondWithError(w, http.StatusForbidden, "Forbidden: Invalid origin")
+	originPtr, err := getOriginFromRequest(r)
+	if err != nil {
+		status := http.StatusForbidden
+		if strings.HasPrefix(err.Error(), "Unauthorized:") {
+			status = http.StatusUnauthorized
+		}
+		respondWithError(w, status, err.Error())
 		return
 	}
-
-	if !checkApiKey(r, origin.ApiKey) {
-		respondWithError(w, http.StatusUnauthorized, "Unauthorized: Invalid or missing API key")
-		return
-	}
+	origin := *originPtr
 
 	var input struct {
 		Path string `json:"path"`
@@ -375,6 +371,17 @@ func PrepareUploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		input.Path = r.FormValue("path")
+	}
+
+	// Verify that a matching path rule exists for the target upload path
+	matchedRule, err := middlewares.FindMatchingRule(origin.ID, input.Path)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if matchedRule == nil {
+		respondWithError(w, http.StatusForbidden, "Forbidden: upload path not allowed (no matching path rule found)")
+		return
 	}
 
 	tokenUUID, err := uuid.NewV7()
@@ -401,4 +408,43 @@ func PrepareUploadHandler(w http.ResponseWriter, r *http.Request) {
 		"path":          presigned.Path,
 		"expires_at":    presigned.CreatedAt.Add(1 * time.Minute),
 	})
+}
+
+// getOriginFromRequest extracts the origin from the request, checking API key first
+func getOriginFromRequest(r *http.Request) (*originModel.Origin, error) {
+	var origin originModel.Origin
+	apiKey := r.Header.Get("X-API-Key")
+	if apiKey == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			parts := strings.Split(authHeader, " ")
+			if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+				apiKey = parts[1]
+			}
+		}
+	}
+
+	if apiKey != "" {
+		if err := database.DB.Where("api_key = ?", apiKey).First(&origin).Error; err == nil {
+			return &origin, nil
+		}
+		return nil, fmt.Errorf("Unauthorized: Invalid API key")
+	}
+
+	requestDomain := middlewares.ResolveDomain(r)
+	if requestDomain == "" {
+		return nil, fmt.Errorf("Forbidden: Missing origin or host header")
+	}
+
+	if err := database.DB.Where("domain = ?", requestDomain).First(&origin).Error; err != nil {
+		dashboardOrigin := os.Getenv("WEB_DASHBOARD_ORIGIN")
+		if dashboardOrigin != "" && requestDomain == middlewares.ParseDomain(dashboardOrigin) {
+			return &originModel.Origin{
+				Domain: requestDomain,
+			}, nil
+		}
+		return nil, fmt.Errorf("Forbidden: Invalid origin")
+	}
+
+	return &origin, nil
 }

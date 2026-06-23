@@ -508,6 +508,13 @@ func TestGeneratePresignedURLRest(t *testing.T) {
 	origin := originModel.Origin{Domain: "testserve.com", IsBlocked: false, ApiKey: "test-key"}
 	db.Create(&origin)
 
+	// Create a rule for "documents" so uploads are allowed
+	rule := ruleModel.Rule{
+		OriginID: origin.ID,
+		Path:     "documents",
+	}
+	db.Create(&rule)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/upload/prepare", upload.PrepareUploadHandler)
 	handler := middlewares.CORSAndOriginHandler(mux)
@@ -907,6 +914,59 @@ func TestDualOriginValidation(t *testing.T) {
 	}
 	if w.Body.String() != "hello registered file" {
 		t.Errorf("Expected content 'hello registered file', got %q", w.Body.String())
+	}
+}
+
+func TestApiKeyOriginFallback(t *testing.T) {
+	setupTestDB(t)
+
+	// Create registered origin in DB with API key
+	dbOrigin := originModel.Origin{
+		Domain: "apidomain.com",
+		ApiKey: "test-api-key-123",
+	}
+	database.DB.Create(&dbOrigin)
+	defer database.DB.Delete(&dbOrigin)
+
+	// Create a rule for "images" so uploads are allowed
+	rule := ruleModel.Rule{
+		OriginID: dbOrigin.ID,
+		Path:     "images",
+	}
+	database.DB.Create(&rule)
+	defer database.DB.Delete(&rule)
+
+	// Setup mock handlers
+	mux := http.NewServeMux()
+	mux.HandleFunc("/upload/prepare", upload.PrepareUploadHandler)
+	handler := middlewares.CORSAndOriginHandler(mux)
+
+	// Case 1: Send request to /upload/prepare with valid X-API-Key, without matching Host/Origin header
+	payload, _ := json.Marshal(map[string]string{
+		"path": "images",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/upload/prepare", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", "test-api-key-123")
+	
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for valid API key without host matching, got %d, body: %s", w.Code, w.Body.String())
+	}
+
+	// Case 2: Send request to /upload/prepare with invalid X-API-Key, without matching Host/Origin header
+	req = httptest.NewRequest(http.MethodPost, "/upload/prepare", bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", "wrong-api-key")
+	
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// It should be blocked (unauthorized or forbidden)
+	if w.Code == http.StatusOK {
+		t.Errorf("Expected status to be blocked (non-200) for invalid API key, got %d", w.Code)
 	}
 }
 
