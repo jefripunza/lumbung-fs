@@ -311,6 +311,79 @@ func TestStrictExternalValidation(t *testing.T) {
 	if allowed || err == nil {
 		t.Error("Expected disallowed on 401 Unauthorized")
 	}
+
+	// Test 4: Upload request (POST) with validation rule -> Should bypass ValidateMethod checks (even when validation server returns 401)
+	responseStatus = http.StatusUnauthorized
+	uploadReq := httptest.NewRequest(http.MethodPost, "/file/secure/document.txt", nil)
+	allowed, _, _, err = middlewares.EvaluatePathRules(uploadReq, origin.ID, "secure/document.txt", 100, "txt")
+	if !allowed || err != nil {
+		t.Errorf("Expected allowed=true on upload POST request, bypassing ValidateMethod validation: %v", err)
+	}
+}
+
+func TestJWTValidationHeaderOrQuery(t *testing.T) {
+	db := setupTestDB(t)
+
+	origin := originModel.Origin{Domain: "jwt-test.com", IsBlocked: false}
+	db.Create(&origin)
+
+	var lastAuthHeader string
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastAuthHeader = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer mockServer.Close()
+
+	// Create a rule with validate_method: jwt and validate_url pointing to mock server
+	rule := ruleModel.Rule{
+		OriginID:       origin.ID,
+		Path:           "secure-jwt",
+		ValidateMethod: "jwt",
+		ValidateURL:    mockServer.URL,
+	}
+	db.Create(&rule)
+
+	// Test 1: Neither header nor query param -> Should block access
+	req1 := httptest.NewRequest(http.MethodGet, "/file/secure-jwt/document.txt", nil)
+	allowed, _, _, err := middlewares.EvaluatePathRules(req1, origin.ID, "secure-jwt/document.txt", 100, "txt")
+	if allowed || err == nil {
+		t.Error("Expected disallowed when both Authorization header and token query parameter are missing")
+	}
+
+	// Test 2: Token passed via Authorization Header -> Should allow access and forward the header
+	lastAuthHeader = ""
+	req2 := httptest.NewRequest(http.MethodGet, "/file/secure-jwt/document.txt", nil)
+	req2.Header.Set("Authorization", "Bearer my-jwt-token-1")
+	allowed, _, _, err = middlewares.EvaluatePathRules(req2, origin.ID, "secure-jwt/document.txt", 100, "txt")
+	if !allowed || err != nil {
+		t.Errorf("Expected allowed=true with Authorization header: %v", err)
+	}
+	if lastAuthHeader != "Bearer my-jwt-token-1" {
+		t.Errorf("Expected forwarded Authorization header to be 'Bearer my-jwt-token-1', got: '%s'", lastAuthHeader)
+	}
+
+	// Test 3: Token passed via query parameter -> Should allow access and forward as Authorization: Bearer <token>
+	lastAuthHeader = ""
+	req3 := httptest.NewRequest(http.MethodGet, "/file/secure-jwt/document.txt?token=my-jwt-token-2", nil)
+	allowed, _, _, err = middlewares.EvaluatePathRules(req3, origin.ID, "secure-jwt/document.txt", 100, "txt")
+	if !allowed || err != nil {
+		t.Errorf("Expected allowed=true with token query parameter: %v", err)
+	}
+	if lastAuthHeader != "Bearer my-jwt-token-2" {
+		t.Errorf("Expected forwarded Authorization header to be 'Bearer my-jwt-token-2', got: '%s'", lastAuthHeader)
+	}
+
+	// Test 4: Token passed via query parameter starting with bearer -> Should preserve the bearer format
+	lastAuthHeader = ""
+	req4 := httptest.NewRequest(http.MethodGet, "/file/secure-jwt/document.txt?token=bearer%20my-jwt-token-3", nil)
+	allowed, _, _, err = middlewares.EvaluatePathRules(req4, origin.ID, "secure-jwt/document.txt", 100, "txt")
+	if !allowed || err != nil {
+		t.Errorf("Expected allowed=true with bearer token query parameter: %v", err)
+	}
+	if lastAuthHeader != "bearer my-jwt-token-3" {
+		t.Errorf("Expected forwarded Authorization header to be 'bearer my-jwt-token-3', got: '%s'", lastAuthHeader)
+	}
 }
 
 func TestSecurePathTraversal(t *testing.T) {

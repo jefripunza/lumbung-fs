@@ -1,7 +1,7 @@
-revisi part 10 :
-- di menu "Rules"
-  - di popup
-    - di field "VALIDATE URL" jika dipakai maka agar bisa melihat file maka response dari url tersebut harus code http 200, dan jika code http selain 200 maka file tidak bisa diakses;
+revisi part 11 :
+- buatkan template2 dari response2 ini
+  - jika response dari validate url range nya 100an - 300an maka boleh akses file, tapi jika range nya 400an - 500an maka di response body nya ada key "message" atau key "error" itu tampilkan di html template (buatkan template nya);
+  - Access denied: Get "http://host.docker.internal:3000/api/validate": dial tcp 192.168.65.254:3000: connect: connection refused
 
 revisi di PLAN.md dan revisi kode;
 

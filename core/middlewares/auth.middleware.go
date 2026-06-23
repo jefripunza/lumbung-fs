@@ -186,7 +186,7 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 	}
 
 	// 3. Authentication Verification (External Endpoint check or local check)
-	if matchedRule.ValidateMethod != "" {
+	if matchedRule.ValidateMethod != "" && r.Method == http.MethodGet {
 		methodLower := strings.ToLower(matchedRule.ValidateMethod)
 
 		// Check headers if method is "headers"
@@ -204,8 +204,8 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 
 		// Check JWT if method is "jwt"
 		if methodLower == "jwt" {
-			if r.Header.Get("Authorization") == "" {
-				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("missing Authorization header for JWT validation")
+			if r.Header.Get("Authorization") == "" && r.URL.Query().Get("token") == "" {
+				return false, matchedRule.ValidateFallbackURL, http.StatusUnauthorized, fmt.Errorf("missing Authorization header or token query parameter for JWT validation")
 			}
 		}
 
@@ -219,7 +219,17 @@ func EvaluatePathRules(r *http.Request, originID string, path string, fileSize i
 			}
 
 			// Forward credentials
-			if auth := r.Header.Get("Authorization"); auth != "" {
+			auth := r.Header.Get("Authorization")
+			if auth == "" {
+				if qToken := r.URL.Query().Get("token"); qToken != "" {
+					if strings.HasPrefix(strings.ToLower(qToken), "bearer ") {
+						auth = qToken
+					} else {
+						auth = "Bearer " + qToken
+					}
+				}
+			}
+			if auth != "" {
 				req.Header.Set("Authorization", auth)
 			}
 			if cookie := r.Header.Get("Cookie"); cookie != "" {
