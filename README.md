@@ -1,4 +1,4 @@
-![LumbungFS Banner](./assets/LumbungFS-banner.png)
+![LumbungFS Banner](https://raw.githubusercontent.com/jefripunza/lumbung-fs/refs/heads/master/assets/LumbungFS-banner.png)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/jefriherditriyanto/lumbung-fs?style=flat-square&logo=docker)](https://hub.docker.com/r/jefriherditriyanto/lumbung-fs)
 [![Docker Image Size](https://img.shields.io/docker/image-size/jefriherditriyanto/lumbung-fs/latest?style=flat-square&logo=docker)](https://hub.docker.com/r/jefriherditriyanto/lumbung-fs)
@@ -71,68 +71,60 @@ services:
 
 ---
 
-## 📤 Backend File Uploads (via `curl`)
+## 📤 File Upload Flow
 
-LumbungFS supports two ways of uploading files programmatically. Note that all backend requests must include a `Host` or `Origin` header that matches the registered origin domain:
+LumbungFS supports a secure two-step presigned token upload flow. This allows backend servers to pre-authorize uploads and lets client applications upload files directly to storage without exposing the primary API key.
 
-### 1. Direct Upload using Origin API Key
+### Step 1: Request a Presigned Upload URL (Backend-to-Backend)
 
-Perform a direct multipart `POST` to the `/upload` endpoint, passing the target subpath as the `path` form field and the API Key in the `X-API-Key` header:
+Send a `POST` request to the `/upload/prepare` endpoint using the origin's API Key. Specify the target `path` in the JSON request body:
 
 ```bash
-curl -X POST http://localhost:8080/upload \
-  -H "X-API-Key: YOUR_ORIGIN_API_KEY" \
-  -F "path=file" \
-  -F "file=@/path/to/local/image.png"
+curl --location 'https://cdn.yourdomain.com/upload/prepare' \
+--header 'X-API-Key: lf_019ef210485c704c90b1ae5a95e56d5c' \
+--header 'Content-Type: application/json' \
+--data '{"path": "test"}'
 ```
 
 Response:
 
 ```json
 {
+  "expires_at": "2026-06-24T00:11:14.466463605Z",
+  "path": "test",
+  "presigned_url": "https://cdn.yourdomain.com/upload?token=019ef6f6-9042-76ab-88be-5daae16057d7",
+  "token": "019ef6f6-9042-76ab-88be-5daae16057d7"
+}
+```
+
+### Step 2: Upload the File (Client-to-Storage)
+
+You can upload the file in one of two ways using the token generated in Step 1:
+
+#### A. Programmatic API Upload (multipart/form-data)
+
+Perform a multipart `POST` request to the `/upload` endpoint with the token as a query parameter and the file attached:
+
+```bash
+curl --location 'https://cdn.yourdomain.com/upload?token=019ef6f6-9042-76ab-88be-5daae16057d7' \
+--form 'file=@"/Users/jefripunza/Documents/LumbungFS.png"'
+```
+
+Response:
+
+```json
+{
+  "filename": "019ef6f6-99d8-7e34-a279-5cc1d3dd9731.png",
   "message": "File uploaded successfully",
-  "original_filename": "image.png",
-  "filename": "018f7c5e-88cc-75b2-baee-191b7d598583.png",
-  "url": "https://yourdomain.com/file/images/018f7c5e-88cc-75b2-baee-191b7d598583.png",
-  "path": "yourdomain_com/images/018f7c5e-88cc-75b2-baee-191b7d598583.png",
-  "size": 1024
+  "path": "cdn_yourdomain_com/test/019ef6f6-99d8-7e34-a279-5cc1d3dd9731.png",
+  "size": 69868,
+  "url": "https://cdn.yourdomain.com/file/test/019ef6f6-99d8-7e34-a279-5cc1d3dd9731.png"
 }
 ```
 
-### 2. Two-Step Presigned Token Upload Flow
+#### B. Interactive Browser Uploader
 
-Use this flow when you want your frontend clients to upload files directly to storage without exposing the primary API key:
-
-#### **Step 1: Request a Presigned Upload URL (Backend-to-Backend)**
-
-Generate a single-use token valid for 1 minute:
-
-```bash
-curl -X POST http://localhost:8080/upload/prepare \
-  -H "X-API-Key: YOUR_ORIGIN_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"path": "url/to/file"}'
-```
-
-Response:
-
-```json
-{
-  "presigned_url": "https://yourdomain.com/upload?token=01904a8b-cb62-7e00-a54f-124b893a7493",
-  "token": "01904a8b-cb62-7e00-a54f-124b893a7493",
-  "path": "images",
-  "expires_at": "2026-06-23T09:15:00Z"
-}
-```
-
-#### **Step 2: Upload File (Client-to-Storage)**
-
-Perform the actual upload using the returned `presigned_url`. No API Key or Host headers are required for the tokenized upload:
-
-```bash
-curl -X POST "http://localhost:8080/upload?token=01904a8b-cb62-7e00-a54f-124b893a7493" \
-  -F "file=@/path/to/local/image.png"
-```
+If you open the `presigned_url` directly in your web browser (e.g., `https://cdn.yourdomain.com/upload?token=019ef6f6-9042-76ab-88be-5daae16057d7`), it will serve a beautiful, responsive, self-contained HTML uploader page. Users can drag and drop or select a file to upload directly from their browser.
 
 ---
 
